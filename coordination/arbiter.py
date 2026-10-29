@@ -33,6 +33,11 @@ class ArbiterAgent:
                 return self._decide(ctx, option, cands, meets=True)
         return self._decide(ctx, 7, self._option7(ctx), meets=False)
 
+    def least_bad(self, scope: ArbiterScope, esc: Escalation) -> ArbiterDecision:
+        """Ablation 'no Arbiter' (DESIGN 11.3): escalations go straight to option 7."""
+        ctx = _Context(scope, esc, scope.victim(esc.victim))
+        return self._decide(ctx, 7, self._option7(ctx), meets=False)
+
     def _decide(self, ctx, option: int, cands: list[ArbiterCandidate], meets: bool) -> ArbiterDecision:
         if not cands:
             return ArbiterDecision(victim=ctx.vid, option=7, option_name=OPTION_NAMES[7], hospital=None, arrival=None,
@@ -45,7 +50,7 @@ class ArbiterAgent:
         c = next(c for c in cands if c.id == picked.option_id)
         on_time = ctx.deadline is None or c.arrival <= ctx.deadline
         return ArbiterDecision(victim=ctx.vid, option=option, option_name=OPTION_NAMES[option], hospital=c.hospital,
-                               arrival=c.arrival, meets_deadline=meets and on_time, loss=not on_time,
+                               arrival=c.arrival, meets_deadline=meets and on_time, loss=option == 7 or not on_time,
                                proposed_actions=c.actions, decided_by=picked.decided_by, reason=picked.reason)
 
     # ----- the seven options -----
@@ -98,8 +103,8 @@ class ArbiterAgent:
                 continue
             for u in sorted({f["unit"] for f in h.me["firm"] if f["unit"]}):
                 unit = scope.unit(u)
-                if unit["state"] != "transporting" or unit["hospital"] != h.id:
-                    continue
+                if unit["kind"] == "HV" or unit["state"] != "transporting" or unit["hospital"] != h.id:
+                    continue  # an inter-hospital transfer is not rerouted to make room
                 riders = [scope.victim(x) for x in unit["victims"]]
                 if any(r["severity"] == "critical" for r in riders):
                     continue

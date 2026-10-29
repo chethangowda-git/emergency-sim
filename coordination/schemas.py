@@ -151,11 +151,15 @@ class RequestedVictim(BaseModel):
 
 
 class AdmissionRequest(BaseModel):
+    """Victims one unit will carry. `aboard`: already in the moving unit, so arrival comes from its ETA."""
+
     incident: str
     origin_node: str
     ready_at: int
     victims: list[RequestedVictim]
     others_in_time: bool = True
+    unit: str | None = None
+    aboard: bool = False
 
 
 class Conditional(BaseModel):

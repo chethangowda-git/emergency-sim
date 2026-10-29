@@ -287,3 +287,15 @@ def test_reroute_needs_a_transporting_unit():
     w = make_world([incident("I01", "B", 0, [("serious", "trauma")])])
     w.start()
     assert rejected(w, Reroute("ALS1", "H2", by="dispatch")) == "unit_busy"
+
+
+def test_lent_vehicle_finishes_its_job_after_the_loan_end_time():
+    w = make_world([incident("I01", "D", 0, [("serious", "trauma")])], hospitals=[hospital("H1", "C", slots=4)])
+    w.start()
+    w.apply([LendVehicle("H1-TV1", 3, by="H1"), SendToScene("H1-TV1", "I01")])
+    run_until(w, 8)                                     # on scene at D after the loan's end time
+    assert rejected(w, SetDestination("H1-TV1", "H1", ("I01-V1",))) is None
+    assert rejected(w, SendToScene("ALS1", "I01")) == "incident_resolved"
+    evs = run_until(w, 40)
+    assert of_type(evs, "patient_delivered")[0]["unit"] == "H1-TV1"
+    assert of_type(evs, "vehicle_loan_ended")

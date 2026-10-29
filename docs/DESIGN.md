@@ -182,6 +182,17 @@ The simulator emits events into a JSONL log, including: `incident_reported`, `sc
 | Redirect | ALS only, before loading (driving to a scene, or on scene with no victims assigned), once per trip |
 | Holds | A targeted hold names the expected critical victim; a general hold names none (max 1 per hospital). Wasted hold minutes = minutes held by holds that expired unused |
 | Reroute deadline | Rejected if any victim whose deadline has not yet passed would arrive after it at the new hospital |
+| Escalation timing | An escalation takes 1 + 2 = 3 minutes from sending until the Arbiter's decision takes effect |
+| Admission unit of negotiation | One Contract Net thread per unit load (the victims one ambulance will carry), so every award names a single hospital for that unit |
+| Load expected ready time | Unit ETA to the scene + 5 minutes, + 10 if the scene still needs clearance |
+| Swap | An ALS heading to a job with no critical is redirected to the critical; a hospital vehicle is lent to take over the abandoned job |
+| Holds in negotiation | When a critical has no unit yet, Dispatch pre-alerts the nearest capable hospital, which may place a targeted hold |
+| Unit request pushback | Not used: Dispatch already plans with the extra units Incident Assessment asks for |
+| Units for non-criticals | After every incident has the right unit type, a free ALS may take a remaining non-critical need, but only if no critical anywhere still lacks an ALS |
+| Mutual aid trigger | Dispatch asks hospitals for a vehicle only for non-criticals within 60 minutes of their deadline (moving minors in early fills ER slots criticals need) |
+| Escalation triggers in Contract Net | Escalate at once when every offer for a victim arrives too late (trigger 1); when hospitals simply decline, negotiate up to 3 rounds and escalate only if a deadline is at risk (under 15 minutes of slack, trigger 2); a victim no capable hospital could reach in time is given the earliest offer (already the least-bad option) |
+| Arbiter least-bad with no slot yet | Binding: the unit goes to the first capable hospital that has room, closest first, and the Arbiter may release a ready-for-release patient to make room; no renegotiation |
+| Same-minute capacity | A hospital declines an award ("capacity taken since my offer") if reservations already placed this minute leave too few slots |
 | Metrics population | Primary and secondary metrics count incident victims only; walk-ins add load |
 
 ---

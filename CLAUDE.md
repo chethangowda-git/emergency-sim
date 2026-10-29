@@ -8,7 +8,7 @@ A multi-agent emergency response system: a **deterministic, seeded simulator on 
 
 **`docs/DESIGN.md` is the source of truth.** Read the sections a task references before coding. If code and DESIGN.md disagree, DESIGN.md wins. If DESIGN.md is ambiguous or seems wrong, stop and ask; don't invent rules.
 
-The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 2.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
+The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 3.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
 
 ## Golden rules
 
@@ -71,6 +71,10 @@ coordination/          # Phase 2 agents (never name a package `agents`)
   tools.py             # read-only scoped views per agent, SDK function tools
   base.py  prompts.py  # rule options + LLM pick + fallback; instructions
   incident_assessment.py  dispatch.py  hospital.py  arbiter.py
+  messages.py          # section 6 messages and the bus with section 7 time costs
+  orchestrator.py      # AgentPolicy: the minute loop, admission Contract Net, Arbiter escalation
+  protocols.py         # holds, transfers, staff lending, mutual aid, swap
+policies/registry.py   # policy names (greedy, agents and ablations) and LLM client setup
 config/llm.json        # LLM mode and pinned model (unset until the first live run)
 cli.py
 dashboard/
@@ -199,15 +203,35 @@ Read DESIGN sections 2, 3.8, 3.9, 3.11, 4, 12 and 17. Agreed scope: agents retur
 
 ---
 
+## Phase 3: negotiation
+
+Read DESIGN sections 5, 6, 7, 8, 9, 11, 12 and 3.11. The live LLM run comes last and needs the user's model ID and API key; everything else is built and tested with LLM mode `off` and the fake LLM.
+
+- [x] `coordination/messages.py`: the section 6 message model (deterministic ids, threads, rounds) and a bus that delivers after the section 7 costs (1 minute per round; escalation 1 + 2 = 3 minutes).
+- [x] `coordination/orchestrator.py`: `AgentPolicy` (a `Policy`): each minute turns world events and due messages into agent triggers, runs the agents, schedules replies, returns agreed actions (including delayed `not_before` actions). Agent messages and agent decisions are logged in the event stream.
+- [x] Protocols (section 5): unit request and updates; admission Contract Net per unit load (pre-alert, call for proposals, offers, award, firm reservation, destination; up to 3 rounds); mutual aid vehicles; swap; routine stabilize-and-transfer; staff lending; reroute after a broken reservation (capacity alert).
+- [x] Limits (section 8): 3 rounds; no reply in a round counts as a decline; reroute and redirect limits; escalate to the Arbiter on the section 4.4 triggers; Arbiter decisions are final.
+- [x] Ablations (11.3): `agents-nonego`, `agents-noarb`, `agents-rulehosp`.
+- [x] Runner and CLI: `--policy agents...`, LLM mode (`off`, `live`, `replay --from <run>`); writes `messages.jsonl` and `llm_calls.jsonl`; negotiation metrics (threads, rounds, counters, deals without the Arbiter, Arbiter decisions, rule vs LLM share).
+- [x] Dashboard: policy choice includes the agents and ablations; Live or replay control.
+- [x] Tests: each protocol on hand-built cases; limits; determinism (same seed, same files); replay of a recorded (fake-LLM) run matches exactly.
+
+### Phase 3 is done when
+
+- [x] All tests pass with no network and no API key.
+- [x] Agents runs (rules only) complete for seeds 1 to 20 with no crashes.
+- [ ] A live agent run completes from the dashboard and its replay matches exactly (needs the user's model and key).
+
+---
+
 ## Later phases (outline only; detailed instructions will be added when each phase starts)
 
-3. **Negotiation:** messages, bus, time costs, limits, orchestrator, Arbiter escalation, ablations.
 4. **Dashboard v2:** agent activity, negotiation history, baseline vs agents side by side.
 5. **Evaluation:** seeds, repeats, ablations, results from one button.
 
 ## Things not to do
 
-- Don't build Phase 3+ features (message bus, time costs, orchestrator, live agent runs) in Phase 2.
+- Don't build Phase 4+ features (agent activity and negotiation panels, side-by-side comparison, evaluation) in Phase 3.
 - Don't download map or road data at simulation time or in tests.
 - Don't use straight-line distance anywhere a travel time is needed; always use the road network.
 - Don't put simulation logic in the dashboard.

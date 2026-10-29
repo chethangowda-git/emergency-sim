@@ -34,9 +34,10 @@ def fit_now(scope: HospitalScope, victims: list[RequestedVictim], extra_slots: i
 
 
 class HospitalAgent:
-    def __init__(self, hospital_id: str, llm: LLMClient) -> None:
+    def __init__(self, hospital_id: str, llm: LLMClient, negotiate: bool = True) -> None:
         self.id = hospital_id
         self.llm = llm
+        self.negotiate = negotiate
 
     # ----- admission -----
 
@@ -47,6 +48,8 @@ class HospitalAgent:
         no_cap = [v.id for v in req.victims if v.care_need not in caps]
         base_decline = [Decline(victims=no_cap, reason="cannot treat this care need")] if no_cap else []
         options = self._admission_options(scope, mood, treatable, base_decline)
+        if not self.negotiate:
+            options = {"accept_now": options["accept_now"]}
         ids = list(options)
         default = self._admission_default(mood, ids)
         if not treatable:
@@ -72,7 +75,8 @@ class HospitalAgent:
         """The section 4.3 ladder: free capacity, release ready patients, after a transfer, protect criticals."""
         ids = [v.id for v in treatable]
         full = "no free capacity now"
-        now = fit_now(scope, treatable)
+        mine = [h for h in scope.me["holds"] if h["victim"] in ids]
+        now = fit_now(scope, treatable, extra_slots=len(mine))
         opts = {"accept_now": self._offer(mood, ids, now, full, base_decline)}
         ready = sorted(scope.patients("ready_for_release"), key=lambda p: (p["ready_at"], p["id"]))
         if ready and len(now) < len(ids):
@@ -164,3 +168,37 @@ class HospitalAgent:
         action = ProposedAction(action="lend_vehicle", vehicle=idle[0], until=req.until, by=self.id)
         return LoanResponse(hospital=self.id, answer="send_now", resource=idle[0], decided_by="rule",
                             reason="vehicle idle", proposed_actions=[action])
+
+
+class RuleHospital:
+    """Ablation 'rule hospitals' (DESIGN 11.3): accept if real capacity is free, nothing else."""
+
+    def __init__(self, hospital_id: str) -> None:
+        self.id = hospital_id
+        self.negotiate = False
+
+    def respond_admission(self, scope: HospitalScope, req: AdmissionRequest) -> AdmissionOffer:
+        treatable = by_urgency([v for v in req.victims if v.care_need in scope.me["capabilities"]])
+        now = fit_now(scope, treatable)
+        rest = [v.id for v in req.victims if v.id not in now]
+        return AdmissionOffer(hospital=self.id, mood=scope.mood(), accept=now, decided_by="rule",
+                              decline=[Decline(victims=rest, reason="no free capacity")] if rest else [],
+                              reason="rule hospital: accept if real capacity is free")
+
+    def respond_transfer(self, scope: HospitalScope, req: TransferRequest) -> TransferResponse:
+        ok = req.care_need in scope.me["capabilities"] and scope.real_capacity(req.care_need) > 0
+        return TransferResponse(hospital=self.id, accept=ok, decided_by="rule",
+                                reason="real capacity free" if ok else "no free capacity",
+                                proposed_actions=[ProposedAction(action="reserve", hospital=self.id, victims=[req.victim],
+                                                                 kind="firm", by=self.id)] if ok else [])
+
+    def respond_staff(self, scope: HospitalScope, req: StaffRequest) -> LoanResponse:
+        return LoanResponse(hospital=self.id, answer="decline", reason="rule hospital does not lend", decided_by="rule")
+
+    def respond_vehicle(self, scope: HospitalScope, req: VehicleRequest) -> LoanResponse:
+        idle = scope.idle_vehicles()
+        if not idle:
+            return LoanResponse(hospital=self.id, answer="decline", reason="vehicle busy", decided_by="rule")
+        action = ProposedAction(action="lend_vehicle", vehicle=idle[0], until=req.until, by=self.id)
+        return LoanResponse(hospital=self.id, answer="send_now", resource=idle[0], decided_by="rule",
+                            reason="rule hospital: vehicle idle", proposed_actions=[action])

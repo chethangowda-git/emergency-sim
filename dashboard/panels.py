@@ -46,6 +46,11 @@ def unit_states(minute: dict) -> pd.DataFrame:
 
 def describe(e: dict) -> str:
     k = e["type"]
+    if k == "message":
+        why = f": {e['reason']}" if e.get("reason") else ""
+        return f"💬 {e['sender']} → {e['recipient']}: {e['msg_type'].replace('_', ' ')}{why}"
+    if k == "agent_decision":
+        return f"🧠 {e['agent']} {e['kind'].replace('_', ' ')} ({e['decided_by']}): {e['reason']}"
     if k == "incident_reported":
         n = len(e["victims"])
         crit = sum(1 for v in e["victims"] if v["severity"] == "critical")
@@ -75,13 +80,33 @@ def describe(e: dict) -> str:
         "deadline_missed": "❌ {victim} ({severity}) missed deadline",
         "unit_returning": "↩️ {unit} returning to base",
         "unit_at_base": "🏠 {unit} at base",
+        "reservation_placed": "📌 {hospital} reserved a slot for {victim}",
+        "reservation_released": "🔓 reservation {reservation} at {hospital} released ({reason})",
+        "hold_placed": "⏳ {hospital} holds a slot for {victim}",
+        "hold_released": "🔓 {hospital} hold {reservation} released ({reason})",
+        "hold_expired": "⌛ {hospital} hold {reservation} expired unused",
+        "transfer_prep": "🚐 {from_hospital} preparing {victim} for transfer to {to_hospital}",
+        "transfer_started": "🚐 {victim} transferring {from_hospital} → {to_hospital}",
+        "transfer_completed": "🏥 {victim} transferred to {hospital}",
+        "transfer_cancelled": "✖️ transfer of {victim} cancelled",
+        "vehicle_lent": "🤝 {hospital} lent {vehicle} to Dispatch until minute {until}",
+        "vehicle_loan_ended": "🤝 {vehicle} back with {hospital}",
+        "staff_lent": "🤝 {staff} lent {from_hospital} → {to_hospital}",
+        "staff_arrived": "🩺 {staff} arrived at {hospital}",
+        "staff_returning": "🩺 {staff} heading back from {from_hospital}",
+        "staff_returned": "🩺 {staff} back at {hospital}",
+        "unit_redirected": "🔀 {unit} redirected {from_incident} → {incident}",
+        "unit_rerouted": "🔀 {unit} rerouted {from_hospital} → {hospital}",
     }
     return templates.get(k, k).format(**e)
 
 
-def event_feed(events: list[dict], t: int, n: int = 25) -> list[tuple[int, str]]:
-    """Latest n events up to minute t, newest first."""
-    past = [e for e in events if e["t"] <= t]
+AGENT_EVENTS = ("message", "agent_decision")
+
+
+def event_feed(events: list[dict], t: int, n: int = 25, agents: bool = False) -> list[tuple[int, str]]:
+    """Latest n events up to minute t, newest first; agent messages and decisions only if asked."""
+    past = [e for e in events if e["t"] <= t and (agents or e["type"] not in AGENT_EVENTS)]
     return [(e["t"], describe(e)) for e in reversed(past[-n:])]
 
 

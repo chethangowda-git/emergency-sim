@@ -49,7 +49,24 @@ def load_run(run_id: str, runs_dir: Path = RUNS_DIR) -> dict:
 
 
 def run_and_save(seed: int, policy: str, progress_cb: Callable[[int, int], None] | None = None,
-                 roads=None) -> str:
+                 roads=None, llm_mode: str | None = None, replay_from: str | None = None) -> str:
     from sim.runner import run
 
-    return run(seed, policy, progress_cb, roads=roads).name
+    src = RUNS_DIR / replay_from if replay_from else None
+    return run(seed, policy, progress_cb, roads=roads, llm_mode=llm_mode, replay_from=src).name
+
+
+def replayable_runs(policy: str, runs_dir: Path = RUNS_DIR) -> list[str]:
+    """Saved runs of this agent policy that recorded at least one LLM call."""
+    out = []
+    for run_id in list_runs(runs_dir):
+        d = runs_dir / run_id
+        cfg = json.loads((d / "config.json").read_text())
+        calls = d / "llm_calls.jsonl"
+        if cfg.get("policy") == policy and calls.exists() and calls.stat().st_size > 0:
+            out.append(run_id)
+    return out
+
+
+def run_config(run_id: str, runs_dir: Path = RUNS_DIR) -> dict:
+    return json.loads((runs_dir / run_id / "config.json").read_text())

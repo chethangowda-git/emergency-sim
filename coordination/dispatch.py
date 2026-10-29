@@ -11,7 +11,7 @@ from coordination.tools import DispatchScope
 
 AGENT = "dispatch"
 SEVERITY_RANK = {"critical": 0, "serious": 1, "minor": 2}
-SWAP_IF_WAIT_OVER = 15
+MUTUAL_AID_WITHIN = 60   # minutes left before a non-critical's deadline that justify borrowing a vehicle
 
 
 def rule_ranking(reports: list[IncidentReport]) -> list[str]:
@@ -21,8 +21,11 @@ def rule_ranking(reports: list[IncidentReport]) -> list[str]:
 
 
 class DispatchAgent:
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: LLMClient, negotiate: bool = True) -> None:
         self.llm = llm
+        self.negotiate = negotiate
+        self._last_situation: tuple | None = None
+        self._last_judgment: DispatchJudgment | None = None
 
     # ----- unit plan -----
 
@@ -30,49 +33,73 @@ class DispatchAgent:
         by_id = {r.incident: r for r in reports}
         ranking = rule_ranking(reports)
         plan = self._allocate(scope, ranking, by_id, {})
-        if not any(len(s.options) > 1 for s in plan.shortfalls) or not self.llm.enabled:
+        judgment_needed = plan.shortfalls and (len(ranking) > 1 or any(len(s.options) > 1 for s in plan.shortfalls))
+        if not judgment_needed or not self.llm.enabled:
             return plan
+        situation = (tuple(sorted(ranking)), tuple((s.incident, tuple(o.id for o in s.options)) for s in plan.shortfalls))
+        if situation == self._last_situation and self._last_judgment is not None:
+            j = self._last_judgment
+            return self._allocate(scope, j.ranking, by_id, {p.incident: p.option_id for p in j.shortfall_plans}
+                                  ).model_copy(update={"decided_by": "llm", "reason": j.reason})
         payload = {"t": scope.t, "reports": [r.model_dump() for r in reports],
                    "shortfalls": [s.model_dump() for s in plan.shortfalls]}
         result = self.llm.ask(AGENT, "plan_units", prompts.DISPATCH, payload, DispatchJudgment)
         j = result.output
+        self._last_situation, self._last_judgment = situation, None
         if j is None or sorted(j.ranking) != sorted(ranking):
             why = result.error or "ranking is not a permutation of the incidents"
             return plan.model_copy(update={"decided_by": "fallback", "reason": f"LLM fallback: {why}"})
+        self._last_judgment = j
         choices = {p.incident: p.option_id for p in j.shortfall_plans}  # checked against the new plan's options
         return self._allocate(scope, j.ranking, by_id, choices).model_copy(
             update={"decided_by": "llm", "reason": j.reason})
 
     def _allocate(self, scope: DispatchScope, ranking: list[str], reports: dict[str, IncidentReport],
                   choices: dict[str, str]) -> UnitPlan:
+        """Pass 1: the right unit type per need, by urgency. Pass 2: free ALS units take remaining
+        non-critical needs, but only if no critical anywhere still lacks an ALS ("send what is available")."""
         used: set[str] = set()
-        assignments, shortfalls, actions = [], [], []
+        assignments, actions = [], []
         incidents = {i["id"]: i for i in scope.incidents()}
-        for pos, iid in enumerate(ranking):
-            node = incidents[iid]["node"]
+        shorts: dict[str, UnitCounts] = {}
+        for iid in ranking:
             missing = self._missing(scope, iid, reports[iid].units_needed)
-            got = UnitCounts()
             for kind in ("ALS", "BLS", "FIRE", "RESCUE"):
-                for _ in range(getattr(missing, kind)):
-                    unit = self._nearest(scope, node, used, ("BLS", "HV") if kind == "BLS" else (kind,))
-                    if unit is None:
-                        continue
-                    used.add(unit)
-                    setattr(got, kind, getattr(got, kind) + 1)
-                    eta = scope.eta(unit, node)
-                    assignments.append(Assignment(unit=unit, incident=iid, eta=eta))
-                    name = "assign_team" if kind in ("FIRE", "RESCUE") else "send_to_scene"
-                    actions.append(ProposedAction(action=name, unit=unit, incident=iid))
-            short = UnitCounts(**{k: getattr(missing, k) - getattr(got, k) for k in ("ALS", "BLS", "FIRE", "RESCUE")})
-            if any(getattr(short, k) for k in ("ALS", "BLS", "FIRE", "RESCUE")):
-                sf = self._shortfall(scope, iid, short, ranking[pos + 1:], used, choices.get(iid))
-                shortfalls.append(sf)
-                chosen = next(o for o in sf.options if o.id == sf.chosen)
-                if chosen.plan == "redirect":
-                    used.add(chosen.unit)
-                    actions.append(ProposedAction(action="redirect", unit=chosen.unit, incident=iid, by=AGENT))
+                kinds = ("BLS", "HV") if kind == "BLS" else (kind,)
+                got = self._assign(scope, incidents[iid], getattr(missing, kind), kinds, used, assignments, actions)
+                setattr(missing, kind, getattr(missing, kind) - got)
+            shorts[iid] = missing
+        if not any(s.ALS for s in shorts.values()):
+            for iid in ranking:
+                shorts[iid].BLS -= self._assign(scope, incidents[iid], shorts[iid].BLS, ("ALS",), used,
+                                                assignments, actions)
+        shortfalls = []
+        for pos, iid in enumerate(ranking):
+            short = shorts[iid]
+            if not any(getattr(short, k) for k in ("ALS", "BLS", "FIRE", "RESCUE")):
+                continue
+            sf = self._shortfall(scope, iid, short, ranking[pos + 1:], used, choices.get(iid))
+            shortfalls.append(sf)
+            chosen = next(o for o in sf.options if o.id == sf.chosen)
+            if chosen.plan in ("redirect", "swap"):
+                used.add(chosen.unit)
+                actions.append(ProposedAction(action="redirect", unit=chosen.unit, incident=iid, by=AGENT))
         return UnitPlan(ranking=ranking, assignments=assignments, shortfalls=shortfalls,
                         proposed_actions=actions, decided_by="rule", reason="nearest free unit by road, by urgency")
+
+    def _assign(self, scope, inc: dict, count: int, kinds: tuple[str, ...], used: set[str],
+                assignments: list, actions: list) -> int:
+        got = 0
+        for _ in range(count):
+            unit = self._nearest(scope, inc["node"], used, kinds)
+            if unit is None:
+                break
+            used.add(unit)
+            got += 1
+            assignments.append(Assignment(unit=unit, incident=inc["id"], eta=scope.eta(unit, inc["node"])))
+            name = "assign_team" if kinds[0] in ("FIRE", "RESCUE") else "send_to_scene"
+            actions.append(ProposedAction(action=name, unit=unit, incident=inc["id"]))
+        return got
 
     def _missing(self, scope: DispatchScope, iid: str, needed: UnitCounts) -> UnitCounts:
         coming = [u for u in scope.units() if u["incident"] == iid and not u["hospital"]
@@ -92,19 +119,27 @@ class DispatchAgent:
         options: list[ShortfallOption] = []
         if short.ALS:
             options += self._redirect_options(scope, iid, lower, used)
+            options += [ShortfallOption(id=f"swap:{o.unit}", plan="swap", unit=o.unit, expected_delay=o.expected_delay,
+                                        detail=f"{o.detail}; a hospital vehicle takes over that job")
+                        for o in options if o.plan == "redirect" and self.negotiate]
         kind = "ALS" if short.ALS else "BLS" if short.BLS else "FIRE" if short.FIRE else "RESCUE"
         wait = self._soonest_free(scope, kind, used)
         if wait:
             options.append(wait)
-        if short.BLS:
+        if short.BLS and self.negotiate and self._at_risk_non_critical(scope, iid):
             options.append(ShortfallOption(id="mutual_aid", plan="mutual_aid", detail="ask hospitals for a vehicle"))
-        if short.ALS and (wait is None or (wait.expected_delay or 0) > SWAP_IF_WAIT_OVER):
-            options.append(ShortfallOption(id="swap", plan="swap",
-                                           detail="ask a hospital to take a non-critical job and free an ALS"))
         options.append(ShortfallOption(id="queue", plan="queue", detail="wait for the next free unit"))
         ids = [o.id for o in options]
         chosen = choice if choice in ids else ids[0]
         return Shortfall(incident=iid, missing=short, options=options, chosen=chosen)
+
+    @staticmethod
+    def _at_risk_non_critical(scope: DispatchScope, iid: str) -> bool:
+        """Borrow hospital vehicles only for non-criticals close to their deadline: moving minors in
+        early fills ER slots that criticals need."""
+        inc = next(i for i in scope.incidents() if i["id"] == iid)
+        return any(v["status"] == "waiting" and v["severity"] != "critical" and v["deadline"] is not None
+                   and v["deadline"] - scope.t <= MUTUAL_AID_WITHIN for v in inc["victims"])
 
     def _redirect_options(self, scope: DispatchScope, iid: str, lower: list[str], used: set[str]) -> list[ShortfallOption]:
         """ALS units heading to a less urgent job that has no critical waiting (DESIGN 4.2)."""
@@ -149,10 +184,11 @@ class DispatchAgent:
     def _award_plans(self, scope, req, offers) -> dict[str, tuple[list[Award], list[str]]]:
         nodes = {h["id"]: h for h in scope.hospitals()}
         offered = self._offered(scope, req, offers, nodes)
+        hopeless = self._hopeless(scope, req, nodes)
         victims = sorted(req.victims, key=lambda v: (SEVERITY_RANK[v.severity], v.deadline or 10**9, v.id))
-        plans = {"earliest": self._plan(victims, offered, lambda o: (o[1], o[0]))}
+        plans = {"earliest": self._plan(victims, offered, lambda o: (o[1], o[0]), hopeless=hopeless)}
         fewest_caps = lambda o: (len(nodes[o[0]]["capabilities"]), o[1], o[0])
-        spare = self._plan(victims, offered, lambda o: (o[1], o[0]), spare_specialist=fewest_caps)
+        spare = self._plan(victims, offered, lambda o: (o[1], o[0]), spare_specialist=fewest_caps, hopeless=hopeless)
         if spare != plans["earliest"]:
             plans["spare_specialist"] = spare
         single = self._single_hospital(victims, offered)
@@ -165,7 +201,9 @@ class DispatchAgent:
         """For each victim, (hospital, arrival minute) for every offer that would take them."""
         out: dict[str, list[tuple[str, int]]] = {v.id: [] for v in req.victims}
         for o in offers:
-            base = req.ready_at + scope.travel(req.origin_node, nodes[o.hospital]["node"])
+            node = nodes[o.hospital]["node"]
+            base = (scope.t + scope.eta(req.unit, node) if req.aboard and req.unit
+                    else req.ready_at + scope.travel(req.origin_node, node))
             for vid in o.accept:
                 if vid in out:
                     out[vid].append((o.hospital, base))
@@ -176,13 +214,31 @@ class DispatchAgent:
         return out
 
     @staticmethod
-    def _plan(victims, offered, order, spare_specialist=None) -> tuple[list[Award], list[str]]:
+    def _hopeless(scope, req, nodes) -> set[str]:
+        """Victims no capable hospital could reach in time even with free capacity."""
+        out = set()
+        for v in req.victims:
+            arrivals = [scope.t + scope.eta(req.unit, h["node"]) if req.aboard and req.unit
+                        else req.ready_at + scope.travel(req.origin_node, h["node"])
+                        for h in nodes.values() if v.care_need in h["capabilities"]]
+            if v.deadline is not None and arrivals and min(arrivals) > v.deadline:
+                out.add(v.id)
+        return out
+
+    @staticmethod
+    def _plan(victims, offered, order, spare_specialist=None, hopeless=frozenset()) -> tuple[list[Award], list[str]]:
+        """Escalate a victim whose offers all arrive too late, unless no hospital ever could: then the
+        earliest offer is the least-bad choice already (DESIGN 4.4, option 7). A victim nobody offered
+        to take is left for the next round."""
         chosen: dict[str, list[tuple[str, int]]] = {}
         escalate = []
         for v in victims:
             fits = [o for o in offered[v.id] if v.deadline is None or o[1] <= v.deadline]
+            if not fits and v.id in hopeless and offered[v.id]:
+                fits = offered[v.id]
             if not fits:
-                escalate.append(v.id)
+                if offered[v.id]:
+                    escalate.append(v.id)
                 continue
             key = spare_specialist if spare_specialist and v.severity != "critical" else order
             h, arrival = min(fits, key=key)

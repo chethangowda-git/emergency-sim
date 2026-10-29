@@ -91,6 +91,11 @@ class World(AgentActions):
         self.events.append(ev)
         return ev
 
+    def log(self, entries: list[dict]) -> None:
+        """Record agent messages and decisions in the same event stream (DESIGN 3.10). No state changes."""
+        for e in entries:
+            self.emit(e["type"], **{k: v for k, v in e.items() if k != "type"})
+
     def snapshot(self) -> WorldView:
         return WorldView(build_snapshot(self), self.roads, self._unit_motion())
 
@@ -278,13 +283,17 @@ class World(AgentActions):
                 getattr(self, EFFECTS[type(action)])(action)
         return self.events[mark:]
 
-    def _can_transport(self, u: Unit) -> str | None:
-        """Ambulances always; a hospital vehicle while lent to Dispatch or stuck at a door."""
+    def _can_transport(self, u: Unit, new_job: bool = False) -> str | None:
+        """Ambulances always. A hospital vehicle while its loan is active: a new job only before the
+        loan's end time; a job already under way can finish (the loan ends once it is free)."""
         if u.is_ambulance:
             return None
         if u.is_vehicle:
-            lent = u.lent_until is not None and self.t < u.lent_until
-            return None if lent or u.state == "at_hospital_no_slot" else "not_lent"
+            if u.state == "at_hospital_no_slot":
+                return None
+            if u.lent_until is None or (new_job and self.t >= u.lent_until):
+                return "not_lent"
+            return None
         return "capability_mismatch"
 
     def _check_send(self, a: SendToScene) -> str | None:
@@ -293,7 +302,7 @@ class World(AgentActions):
             return "unknown_unit"
         if inc not in self.reported:
             return "unknown_incident"
-        reason = self._can_transport(u)
+        reason = self._can_transport(u, new_job=True)
         if reason:
             return reason
         if u.state not in FREE_STATES:

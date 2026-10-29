@@ -49,11 +49,23 @@ The agents can propose actions the baseline never uses: holds, early release, tr
 
 Nothing calls the OpenAI API yet. `config/llm.json` has `mode: off` and no model. Before the first live run (Phase 3), set `model` to a pinned OpenAI model ID and provide `OPENAI_API_KEY`. Every LLM call is then recorded, so a run can be replayed exactly without a key.
 
+## Negotiation (Phase 3)
+
+Choose **agents** in the Policy menu to run the multi-agent system. Agents talk through messages, and each round costs a simulated minute; an escalation to the Arbiter costs 3. The world keeps moving while they negotiate.
+
+- **Admission:** for each ambulance load, Dispatch runs a Contract Net with the hospitals (call for proposals, offers, award). The awarded hospital places a firm reservation, then Dispatch sets the destination.
+- **Other protocols:** mutual-aid vehicles, the swap, routine transfers between hospitals, staff loans, and rerouting an ambulance after a walk-in takes its reserved slot.
+- **The Arbiter** steps in when no offer is in time, or when 3 rounds fail while a deadline is at risk. Its rulings are final.
+
+Three comparison variants switch parts of the system off: **no negotiation**, **no Arbiter** and **rule hospitals**.
+
+For agents, the sidebar also has an **LLM** choice: rules only (no key needed), live (needs the model and key described above; every call is recorded), or replay of a recorded run (exact, no key). Run folders for agents also contain `messages.jsonl` and `llm_calls.jsonl`. In the Live events feed, the **Agent messages** toggle shows the messages and each agent's decisions.
+
 ## For developers
 
 ```bash
 pytest -q                                    # all tests, no network
-python -m cli run --policy greedy --seed 42  # headless run
+python -m cli run --policy greedy --seed 42  # headless run (also: --policy agents --llm off)
 python scripts/fetch_roads.py                # one-time road download (needs network)
 streamlit run dashboard/app.py               # the dashboard
 ```

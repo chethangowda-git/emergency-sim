@@ -1,6 +1,7 @@
 """Streamlit dashboard: run, reopen and watch simulations. Start with the launcher."""
 from __future__ import annotations
 
+import os
 import secrets
 import sys
 import time
@@ -15,7 +16,11 @@ import streamlit as st  # noqa: E402
 from dashboard import map_view, panels, run_store  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
+from coordination.llm import load_llm_config  # noqa: E402
 from sim.runner import POLICIES, load_roads  # noqa: E402
+
+POLICY_LABELS = {"greedy": "greedy baseline", "agents": "agents", "agents-nonego": "agents, no negotiation",
+                 "agents-noarb": "agents, no Arbiter", "agents-rulehosp": "agents, rule hospitals"}
 
 SPEEDS = {"1x": 1, "5x": 5, "20x": 20}
 FRAME_SECONDS = 0.25
@@ -56,14 +61,20 @@ def open_run(run_id: str) -> None:
     st.session_state.playing = False
 
 
-def start_run(seed: int, policy: str) -> None:
+def start_run(seed: int, policy: str, llm_mode: str | None = None, replay_from: str | None = None) -> None:
     bar = st.sidebar.progress(0.0, text=f"Simulating seed {seed} ...")
 
     def progress(done: int, total: int) -> None:
         if done % 10 == 0 or done == total:
             bar.progress(done / total, text=f"Simulating seed {seed}: minute {done}/{total}")
 
-    run_id = run_store.run_and_save(seed, policy, progress, roads=roads())
+    try:
+        run_id = run_store.run_and_save(seed, policy, progress, roads=roads(), llm_mode=llm_mode,
+                                        replay_from=replay_from)
+    except ValueError as exc:
+        bar.empty()
+        st.sidebar.error(str(exc))
+        return
     bar.empty()
     open_run(run_id)
     st.session_state.playing = True
@@ -74,11 +85,17 @@ def sidebar() -> None:
     sb = st.sidebar
     sb.header("🚑 Emergency response")
     seed = sb.number_input("Seed", min_value=0, max_value=1_000_000, value=42, step=1)
-    policy = sb.selectbox("Policy", sorted(POLICIES))
-    if sb.button("Run simulation", type="primary", width="stretch"):
-        start_run(int(seed), policy)
-    if sb.button("New scenario", width="stretch", help="Random seed, then run it"):
-        start_run(secrets.randbelow(100_000), policy)
+    policy = sb.selectbox("Policy", POLICIES, format_func=lambda p: POLICY_LABELS.get(p, p))
+    llm_mode, replay_from = (None, None) if policy == "greedy" else llm_controls(sb, policy)
+    if llm_mode == "replay" and not replay_from:
+        sb.caption("No recorded runs of this policy to replay yet.")
+    if sb.button("Run simulation", type="primary", width="stretch",
+                 disabled=llm_mode == "replay" and not replay_from):
+        if replay_from:
+            seed = run_store.run_config(replay_from)["seed"]
+        start_run(int(seed), policy, llm_mode, replay_from)
+    if sb.button("New scenario", width="stretch", help="Random seed, then run it", disabled=llm_mode == "replay"):
+        start_run(secrets.randbelow(100_000), policy, llm_mode)
 
     runs = run_store.list_runs()
     if runs:
@@ -96,6 +113,21 @@ def sidebar() -> None:
         st.rerun()
     sb.radio("Speed (simulated minutes per second)", list(SPEEDS), horizontal=True, key="speed")
     sb.caption("Drag the time slider above the map to jump to any minute.")
+
+
+def llm_controls(sb, policy: str) -> tuple[str, str | None]:
+    """Live or replay (DESIGN 13.1): rules only, live model calls (recorded), or replay a recording."""
+    cfg = load_llm_config()
+    live_ok = bool(cfg.get("model")) and bool(os.environ.get("OPENAI_API_KEY"))
+    modes = {"off": "Rules only (no LLM)", "live": "Live LLM (recorded)", "replay": "Replay a recorded run"}
+    mode = sb.radio("Agents' LLM", list(modes), format_func=modes.get, key="llm_mode")
+    if mode == "live" and not live_ok:
+        sb.warning("Live needs a pinned `model` in config/llm.json and OPENAI_API_KEY. Using rules only.")
+        return "off", None
+    if mode == "replay":
+        runs = run_store.replayable_runs(policy)
+        return "replay", sb.selectbox("Recorded run", runs) if runs else None
+    return mode, None
 
 
 def on_slider() -> None:
@@ -146,8 +178,10 @@ def playback_body(run_id: str) -> None:
         st.markdown("##### Hospitals")
         st.dataframe(panels.hospital_table(state), width="stretch")
         st.dataframe(panels.per_hospital_kpis(kpis_at(run_id, minute)), width="stretch")
-    st.markdown("##### Live events")
-    feed = panels.event_feed(run["events"], minute)
+    head, toggle = st.columns([3, 1])
+    head.markdown("##### Live events")
+    show_agents = toggle.toggle("Agent messages", value=False, key="show_agent_events")
+    feed = panels.event_feed(run["events"], minute, agents=show_agents)
     st.markdown("\n".join(f"- **{et:>3}** {'🟢 ' if et == minute else ''}{text}" for et, text in feed)
                 or "_No events yet._")
 

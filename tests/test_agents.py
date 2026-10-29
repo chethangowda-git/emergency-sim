@@ -5,8 +5,8 @@ from coordination.dispatch import DispatchAgent
 from coordination.hospital import HospitalAgent
 from coordination.incident_assessment import IncidentAssessmentAgent
 from coordination.llm import LLMClient
-from coordination.schemas import (AdmissionOffer, AdmissionRequest, Escalation, RequestedVictim, StaffRequest,
-                                  TransferRequest, VehicleRequest)
+from coordination.schemas import (AdmissionOffer, AdmissionRequest, Conditional, Escalation, RequestedVictim,
+                                  StaffRequest, TransferRequest, VehicleRequest)
 from coordination.tools import ArbiterScope, DispatchScope, HospitalScope, IncidentScope, mood_for
 from sim.actions import Reserve, SendToScene, SetDestination
 from sim.models import UnitSpec
@@ -92,7 +92,7 @@ def test_dispatch_shortfall_rule_ranks_by_minutes_left():
     w.start()
     plan = DispatchAgent(OFF).plan_units(DispatchScope(w.snapshot()), reports(w))
     assert plan.ranking == ["I01", "I02"] and plan.assignments[0].incident == "I01"
-    assert plan.shortfalls[0].incident == "I02" and plan.shortfalls[0].chosen == "swap"
+    assert plan.shortfalls[0].incident == "I02" and plan.shortfalls[0].chosen == "queue"
 
 
 def test_dispatch_llm_can_reorder_competing_incidents():
@@ -156,11 +156,18 @@ def test_award_llm_can_spare_the_specialist_hospital():
     assert [(a.hospital, a.victims) for a in d.awards] == [("H1", ["I01-V1"]), ("H2", ["I01-V2"])]
 
 
-def test_award_escalates_when_no_offer_meets_deadline():
+def test_award_escalates_when_offers_arrive_too_late():
     w, req, offers = award_setup()
-    late = req.model_copy(update={"ready_at": 59})
-    d = DispatchAgent(OFF).award(DispatchScope(w.snapshot()), late, [offers[1]])
+    late = AdmissionOffer(hospital="H1", mood="protective", accept=[], decided_by="rule",
+                          conditional=[Conditional(victims=["I01-V1"], after="transfer", after_minute=70)])
+    d = DispatchAgent(OFF).award(DispatchScope(w.snapshot()), req, [late, offers[1]])
     assert d.escalate == ["I01-V1"]
+
+
+def test_award_leaves_victims_nobody_offered_for_the_next_round():
+    w, req, offers = award_setup()
+    d = DispatchAgent(OFF).award(DispatchScope(w.snapshot()), req, [offers[1]])
+    assert d.escalate == [] and [a.victims for a in d.awards] == [["I01-V2"]]
 
 
 # ----- Hospital -----

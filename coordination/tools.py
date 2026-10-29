@@ -36,7 +36,8 @@ class IncidentScope:
                                     "victims", "surge")}
 
     def at_scene(self, iid: str) -> list[dict]:
-        return [v for v in self.incident(iid)["victims"] if v["status"] in AT_SCENE]
+        """Victims still waiting for a unit to take them (not yet assigned to one)."""
+        return [v for v in self.incident(iid)["victims"] if v["status"] == "waiting"]
 
 
 class DispatchScope:
@@ -45,12 +46,13 @@ class DispatchScope:
         self.t = view.t
 
     def units(self) -> list[dict]:
-        """The Dispatch fleet, plus hospital vehicles only while they are lent to it."""
-        return [u for u in self._v.data["units"] if u["kind"] != "HV"
-                or (u["lent_until"] is not None and self.t < u["lent_until"])]
+        """The Dispatch fleet, plus hospital vehicles while a loan to it is active."""
+        return [u for u in self._v.data["units"] if u["kind"] != "HV" or u["lent_until"] is not None]
 
     def free_units(self, kind: str | None = None) -> list[dict]:
-        return [u for u in self.units() if u["state"] in FREE and (kind is None or u["kind"] == kind)]
+        """Free for a new job; a lent vehicle only before its loan's end time."""
+        return [u for u in self.units() if u["state"] in FREE and (kind is None or u["kind"] == kind)
+                and (u["kind"] != "HV" or self.t < u["lent_until"])]
 
     def free_at(self, unit: dict) -> int | None:
         """When a busy unit should be free again, if a rule can tell (transport or handover)."""

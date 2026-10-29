@@ -85,3 +85,38 @@ def test_run_progress_and_metrics(tmp_path):
     assert seen[0] == (1, SMALL.horizon) and seen[-1] == (SMALL.horizon, SMALL.horizon)
     m = json.loads((out / "metrics.json").read_text())
     assert m["rejected_actions"] == 0 and m["victims_total"] > 0
+
+
+def test_agents_run_writes_messages_and_is_deterministic(tmp_path):
+    a = run(5, "agents", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
+    b = run(5, "agents", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
+    assert a.name == "seed5-agents-001" and (a / "messages.jsonl").exists() and (a / "llm_calls.jsonl").exists()
+    for name in ("events.jsonl", "routes.json", "timeline.jsonl", "metrics.json", "messages.jsonl"):
+        assert (a / name).read_bytes() == (b / name).read_bytes(), name
+    cfg = json.loads((a / "config.json").read_text())
+    assert cfg["policy"] == "agents" and cfg["llm"]["mode"] == "off"
+
+
+def test_replay_through_the_runner_matches_the_recording(tmp_path):
+    from coordination.llm import LLMClient
+    from tests.test_orchestrator import last_option
+
+    rec = run(5, "agents", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES,
+              llm=LLMClient("fake", fake=last_option))
+    assert (rec / "llm_calls.jsonl").read_text()
+    rep = run(5, "agents", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="replay",
+              replay_from=rec)
+    for name in ("events.jsonl", "messages.jsonl", "metrics.json", "routes.json"):
+        assert (rec / name).read_bytes() == (rep / name).read_bytes(), name
+
+
+def test_agent_variants_run(tmp_path):
+    for policy in ("agents-nonego", "agents-noarb", "agents-rulehosp"):
+        out = run(5, policy, runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
+        assert json.loads((out / "config.json").read_text())["policy"] == policy
+
+
+def test_agents_on_the_real_network_smoke(tmp_path):
+    out = run(42, "agents", runs_dir=tmp_path, llm_mode="off")
+    m = json.loads((out / "metrics.json").read_text())
+    assert m["victims_delivered"] > 0 and m["negotiation"]["threads"] > 0

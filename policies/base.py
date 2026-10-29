@@ -13,3 +13,7 @@ class Policy(ABC):
     @abstractmethod
     def decide(self, view: WorldView, events: list[dict]) -> list[Action]:
         """Return actions for this minute. Must not change the world."""
+
+    def drain_log(self) -> list[dict]:
+        """Messages and decisions to record in the event stream this minute (agents only)."""
+        return []

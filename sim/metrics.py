@@ -106,6 +106,27 @@ def rejected_actions(events: list[dict]) -> dict:
     return {"rejected_actions": sum(reasons.values()), "rejected_by_reason": dict(sorted(reasons.items()))}
 
 
+def negotiation(events: list[dict]) -> dict:
+    """DESIGN 11.1 negotiation group, from the agent messages and decisions in the event stream."""
+    msgs = [e for e in events if e["type"] == "message"]
+    threads: dict[str, set[str]] = {}
+    rounds: dict[str, int] = {}
+    for m in msgs:
+        threads.setdefault(m["thread_id"], set()).add(m["msg_type"])
+        rounds[m["thread_id"]] = max(rounds.get(m["thread_id"], 0), m["round"])
+    deals = [t for t, kinds in threads.items() if "admission_award" in kinds]
+    decisions = Counter(e["decided_by"] for e in events if e["type"] == "agent_decision")
+    total = sum(decisions.values())
+    return {
+        "threads": len(threads), "rounds": sum(rounds.values()),
+        "counters": sum(1 for m in msgs if m["msg_type"] == "admission_counter"),
+        "deals_without_arbiter": sum(1 for t in deals if "escalation" not in threads[t]),
+        "escalations": sum(1 for m in msgs if m["msg_type"] == "escalation"),
+        "arbiter_decisions": sum(1 for e in events if e["type"] == "agent_decision" and e["agent"] == "arbiter"),
+        "decisions_by": {k: pct(decisions[k], total) for k in ("rule", "llm", "fallback")} if total else {},
+    }
+
+
 def compute(victims: list[dict], timeline: list[dict], events: list[dict]) -> dict:
     ambulances = {u["id"] for u in timeline[0]["units"] if u["kind"] in ("ALS", "BLS")} if timeline else set()
     responses = response_times(events, ambulances)
@@ -130,6 +151,7 @@ def compute(victims: list[dict], timeline: list[dict], events: list[dict]) -> di
         "reservations_broken": kinds["reservation_broken"],
         "wasted_hold_minutes": wasted_hold_minutes(events),
         **coordination_counts(events),
+        "negotiation": negotiation(events),
     }
 
 
