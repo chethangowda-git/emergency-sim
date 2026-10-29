@@ -1,0 +1,6 @@
+{
+  "mode": "off",
+  "model": null,
+  "temperature": 0,
+  "note": "Set model to a pinned OpenAI model ID before the first live run (Phase 3). Phase 2 never calls the API."
+}

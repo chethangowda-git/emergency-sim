@@ -41,6 +41,14 @@ Three well-spread real hospital sites host the simulated hospitals. They have **
 - Hospitals start empty. Staff work the whole run. Victims don't deteriorate. Every victim goes to a hospital.
 - The full list, with the exact rules, is in DESIGN sections 3, 3.11 and 15.
 
+## Agents (Phase 2)
+
+Four agents live in `coordination/`: Incident Assessment, Dispatch, one Hospital agent per hospital, and the Arbiter. Rules compute every number and list the possible options. When only one option fits, the rule decides. Otherwise an LLM picks among the options and gives a one-line reason, and a rule takes over if the LLM's answer is missing or invalid. Each decision records whether a rule, the LLM or the fallback made it.
+
+The agents can propose actions the baseline never uses: holds, early release, transfers between hospitals, lending a vehicle or a staff member, and redirecting or rerouting an ambulance. The simulator still checks every action against the same rules.
+
+Nothing calls the OpenAI API yet. `config/llm.json` has `mode: off` and no model. Before the first live run (Phase 3), set `model` to a pinned OpenAI model ID and provide `OPENAI_API_KEY`. Every LLM call is then recorded, so a run can be replayed exactly without a key.
+
 ## For developers
 
 ```bash

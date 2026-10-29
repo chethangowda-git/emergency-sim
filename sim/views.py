@@ -85,10 +85,10 @@ def _hospital(w: World, hid: str) -> dict:
         "in_treatment": statuses.count("in_treatment") + statuses.count("transferable"),
         "ready_for_release": statuses.count("ready_for_release"), "boarding": statuses.count("boarding"),
         "ward_beds": h.ward_beds, "ward_used": len(h.ward),
-        "doctors": [{"id": d.id, "skills": list(d.skills), "patients": list(d.patients), "home": d.home,
-                     "lent_until": d.lent_until} for d in h.doctors],
-        "nurses": [{"id": n.id, "patients": list(n.patients), "home": n.home, "lent_until": n.lent_until}
-                   for n in h.nurses],
+        "doctors": [{"id": d.id, "skills": list(d.skills), "patients": list(d.patients), "max": d.max_patients,
+                     "home": d.home, "lent_until": d.lent_until} for d in h.doctors],
+        "nurses": [{"id": n.id, "patients": list(n.patients), "max": n.max_patients, "home": n.home,
+                    "lent_until": n.lent_until} for n in h.nurses],
         "vehicles": [{"id": u.id, "state": u.state, "lent_until": u.lent_until}
                      for u in (w.units[v.id] for v in h.vehicles)],
         "patients": [_patient(w.victims[v]) for v in h.er],

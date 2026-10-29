@@ -58,12 +58,20 @@ sim/
   generator.py         # seeded scenario: incidents, victims, walk-in schedule, fleet
   world.py             # World: step(), actions, event log
   hospital_flow.py     # patient lifecycle inside a hospital, walk-ins
+  agent_actions.py     # agent-only actions (holds, transfers, loans, redirect, reroute)
   views.py             # World.snapshot() data and road-time helpers for policies
   metrics.py           # DESIGN section 11 (Phase 1 subset)
   runner.py            # run(seed, policy, progress_cb) -> run folder
 policies/
   base.py              # Policy interface: decide(view, events) -> list[Action]
   greedy.py            # DESIGN section 10
+coordination/          # Phase 2 agents (never name a package `agents`)
+  schemas.py           # Pydantic decisions and proposed actions
+  llm.py               # LLM wrapper: off, fake, replay, live; record every call
+  tools.py             # read-only scoped views per agent, SDK function tools
+  base.py  prompts.py  # rule options + LLM pick + fallback; instructions
+  incident_assessment.py  dispatch.py  hospital.py  arbiter.py
+config/llm.json        # LLM mode and pinned model (unset until the first live run)
 cli.py
 dashboard/
   app.py               # layout, sidebar controls
@@ -163,31 +171,31 @@ Read DESIGN sections 2, 3.8, 3.9, 3.11, 4, 12 and 17. Agreed scope: agents retur
 
 ### 2.1 Agent-only world actions (same world for everyone; the baseline never uses them)
 
-- [ ] `reserve` (firm for given victims, or hold: targeted at an expected critical, or at most 1 general hold per hospital; holds expire after 15 minutes, are released when their critical goes elsewhere, and convert when it is reserved here). `set_destination` reuses an existing firm reservation, otherwise creates one as in Phase 1.
-- [ ] `release_hold`, early `release_patient`.
-- [ ] Hospital transport vehicles as units (`H1-TV1`): `transfer_patient` (5 minutes preparation, remaining treatment continues at the receiver), `lend_vehicle` (carries like BLS while lent, returns after the end time once free).
-- [ ] `lend_staff` (travels by road, returns after the end time once its patients are done).
-- [ ] `redirect` (ALS, before loading, once per trip, only to an incident with a waiting critical) and `reroute` (while transporting, once per trip unless by the Arbiter, firm reservation at the new hospital, deadlines still met).
-- [ ] Walk-ins take a hold before breaking a firm reservation. Permission checks (`by`) and a rejection reason for every rule. Events for all of it.
-- [ ] Metrics: wasted hold minutes, holds, transfers, reroutes, redirects, early releases, loans.
-- [ ] Greedy runs unchanged in behaviour; all Phase 1 tests still pass.
+- [x] `reserve` (firm for given victims, or hold: targeted at an expected critical, or at most 1 general hold per hospital; holds expire after 15 minutes, are released when their critical goes elsewhere, and convert when it is reserved here). `set_destination` reuses an existing firm reservation, otherwise creates one as in Phase 1.
+- [x] `release_hold`, early `release_patient`.
+- [x] Hospital transport vehicles as units (`H1-TV1`): `transfer_patient` (5 minutes preparation, remaining treatment continues at the receiver), `lend_vehicle` (carries like BLS while lent, returns after the end time once free).
+- [x] `lend_staff` (travels by road, returns after the end time once its patients are done).
+- [x] `redirect` (ALS, before loading, once per trip, only to an incident with a waiting critical) and `reroute` (while transporting, once per trip unless by the Arbiter, firm reservation at the new hospital, deadlines still met).
+- [x] Walk-ins take a hold before breaking a firm reservation. Permission checks (`by`) and a rejection reason for every rule. Events for all of it.
+- [x] Metrics: wasted hold minutes, holds, transfers, reroutes, redirects, early releases, loans.
+- [x] Greedy runs unchanged in behaviour; all Phase 1 tests still pass.
 
 ### 2.2 LLM wrapper, tools and agents (`coordination/`)
 
-- [ ] `coordination/llm.py`: modes `off`, `fake` (tests), `replay` and `live`/`record` (OpenAI Agents SDK, pinned model, temperature 0). Every call recorded (`llm_calls.jsonl`); outputs validated with Pydantic; invalid or missing output falls back to a rule, logged.
-- [ ] `coordination/tools.py`: read-only scoped views (incident facts; Dispatch: its units and hospital capabilities only; Hospital: only its own hospital; Arbiter: everything), also offered to the LLM as function tools in live mode.
-- [ ] Agents: rules (code) build the numbers and the candidate options; a fast path decides when only one option fits; otherwise the LLM picks among the candidates with a one-line reason; a fallback rule covers anything invalid.
-  - [ ] Incident Assessment: report (response type, units needed, urgency, care counts) plus LLM context from the description.
-  - [ ] Dispatch: unit plan for competing requests (shortfall plans: queue, wait for a unit, redirect, mutual aid, swap) and admission awards from hospital offers (escalate when no offer meets a deadline).
-  - [ ] Hospital: mood, admission offer by the section 4.3 ladder, replies to transfer, staff and vehicle requests (EMTALA rules).
-  - [ ] Arbiter: options 1 to 7 in order, stopping at the first that meets the deadline.
-- [ ] Tests: every agent returns valid output on hand-built cases with no API key (fast path, LLM choice, invalid LLM output → fallback, replay).
+- [x] `coordination/llm.py`: modes `off`, `fake` (tests), `replay` and `live`/`record` (OpenAI Agents SDK, pinned model, temperature 0). Every call recorded (`llm_calls.jsonl`); outputs validated with Pydantic; invalid or missing output falls back to a rule, logged.
+- [x] `coordination/tools.py`: read-only scoped views (incident facts; Dispatch: its units and hospital capabilities only; Hospital: only its own hospital; Arbiter: everything), also offered to the LLM as function tools in live mode.
+- [x] Agents: rules (code) build the numbers and the candidate options; a fast path decides when only one option fits; otherwise the LLM picks among the candidates with a one-line reason; a fallback rule covers anything invalid.
+  - [x] Incident Assessment: report (response type, units needed, urgency, care counts) plus LLM context from the description.
+  - [x] Dispatch: unit plan for competing requests (shortfall plans: queue, wait for a unit, redirect, mutual aid, swap) and admission awards from hospital offers (escalate when no offer meets a deadline).
+  - [x] Hospital: mood, admission offer by the section 4.3 ladder, replies to transfer, staff and vehicle requests (EMTALA rules).
+  - [x] Arbiter: options 1 to 7 in order, stopping at the first that meets the deadline.
+- [x] Tests: every agent returns valid output on hand-built cases with no API key (fast path, LLM choice, invalid LLM output → fallback, replay).
 
 ### Phase 2 is done when
 
-- [ ] All tests pass with no network and no API key.
-- [ ] Each agent returns valid output on hand-built cases (rules, fake LLM, replay).
-- [ ] The greedy baseline on seed 42 gives the same events and metrics as before (apart from new metric keys).
+- [x] All tests pass with no network and no API key.
+- [x] Each agent returns valid output on hand-built cases (rules, fake LLM, replay).
+- [x] The greedy baseline on seed 42 gives the same events and metrics as before (apart from new metric keys).
 
 ---
 
