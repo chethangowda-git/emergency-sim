@@ -111,10 +111,12 @@ def advance(horizon: int) -> None:
     st.session_state.last_tick = now
 
 
-def view_state() -> dict:
-    b = load_area()["bbox"]
-    return {"latitude": (b["south"] + b["north"]) / 2, "longitude": (b["west"] + b["east"]) / 2,
-            "zoom": 13.2, "pitch": 0}
+def view_state(run: dict) -> dict:
+    """Centred on the hospitals, zoomed so all three and their labels fit the map column."""
+    hs = run["timeline"][0]["hospitals"]
+    lats, lons = [h["lat"] for h in hs], [h["lon"] for h in hs]
+    return {"latitude": (min(lats) + max(lats)) / 2, "longitude": (min(lons) + max(lons)) / 2,
+            "zoom": 12.6, "pitch": 0}
 
 
 def playback_body(run_id: str) -> None:
@@ -126,10 +128,10 @@ def playback_body(run_id: str) -> None:
     minute = int(t)
     state = run["timeline"][minute]
 
-    left, right = st.columns([3, 1])
+    left, right = st.columns([4, 1])
     with left:
-        st.pydeck_chart(map_view.build_deck(run, t, view_state()), height=560, key="map")
-        st.markdown(map_view.LEGEND_HTML, unsafe_allow_html=True)
+        st.pydeck_chart(map_view.build_deck(run, t, view_state(run)), height=560, key="map")
+        st.markdown(map_view.legend_html(), unsafe_allow_html=True)
     with right:
         st.markdown(f"#### Minute {minute} of {horizon - 1}")
         for name, value in panels.kpis(kpis_at(run_id, minute)):
