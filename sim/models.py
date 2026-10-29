@@ -7,6 +7,7 @@ from sim.roads import Route
 
 AMBULANCE_KINDS = ("ALS", "BLS")
 TEAM_KINDS = ("FIRE", "RESCUE")
+VEHICLE_KIND = "HV"
 TEAM_FOR_REQUIREMENT = {"fire": "FIRE", "rescue": "RESCUE"}
 
 
@@ -33,6 +34,9 @@ class Victim:
     released_at: int | None = None
     doctor: str | None = None
     nurse: str | None = None
+    treatment_minutes: int | None = None
+    treatment_remaining: int | None = None
+    transfers: int = 0
 
     def __post_init__(self) -> None:
         if not self.original_severity:
@@ -73,6 +77,12 @@ class Staff:
     skills: tuple[str, ...]
     max_patients: int
     patients: list[str] = field(default_factory=list)
+    home: str = ""
+    lent_until: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.home:
+            self.home = self.hospital
 
     @property
     def free(self) -> int:
@@ -145,21 +155,35 @@ class Unit:
     trip: Trip | None = None
     on_scene_since: int | None = None
     handover_until: int | None = None
+    owner: str | None = None
+    lent_until: int | None = None
+    prep_until: int | None = None
+    redirects: int = 0
+    reroutes: int = 0
 
     @property
     def is_ambulance(self) -> bool:
         return self.kind in AMBULANCE_KINDS
 
+    @property
+    def is_vehicle(self) -> bool:
+        return self.kind == VEHICLE_KIND
+
 
 @dataclass
 class Reservation:
+    """Firm: one victim, one ER slot. Hold: a slot kept free, for a named expected critical
+    (`victim` set) or general (`victim` None), until `expires_at`."""
+
     id: str
     hospital: str
-    unit: str
-    victim: str
+    unit: str | None
+    victim: str | None
     created_at: int
     kind: str = "firm"
     status: str = "active"
+    expires_at: int | None = None
+    ended_at: int | None = None
 
 
 @dataclass

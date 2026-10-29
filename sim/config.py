@@ -47,6 +47,8 @@ class SimConfig:
     clearance_minutes: int = 10
     on_scene_minutes: int = 5
     handover_minutes: int = 5
+    hold_minutes: int = 15
+    transfer_prep_minutes: int = 5
 
     n_incidents: int = 12
     normal_victims: tuple[int, int] = (1, 4)

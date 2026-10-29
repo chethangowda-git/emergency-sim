@@ -8,7 +8,7 @@ A multi-agent emergency response system: a **deterministic, seeded simulator on 
 
 **`docs/DESIGN.md` is the source of truth.** Read the sections a task references before coding. If code and DESIGN.md disagree, DESIGN.md wins. If DESIGN.md is ambiguous or seems wrong, stop and ask; don't invent rules.
 
-The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 1.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
+The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 2.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
 
 ## Golden rules
 
@@ -151,22 +151,55 @@ Read DESIGN sections 3, 10, 11, 13, 15 and 17.
 ### Phase 1 is done when
 
 - [x] All tests pass with no network.
-- [ ] From the launcher: Run simulation for seed 42 → ambulances drive real streets to incidents and hospitals; all panels update in sync; Past runs reopens it.
+- [x] From the launcher: Run simulation for seed 42 → ambulances drive real streets to incidents and hospitals; all panels update in sync; Past runs reopens it. (Map markers reworked after user feedback.)
 - [x] Running seed 42 twice gives identical files.
 - [x] README explains launching, the chosen area and the assumptions.
 
 ---
 
+## Phase 2: agents
+
+Read DESIGN sections 2, 3.8, 3.9, 3.11, 4, 12 and 17. Agreed scope: agents return **typed decision objects** (Pydantic) with proposed world actions; the section 6 message schema, the bus, time costs and the orchestrator are Phase 3. Nothing in Phase 2 calls the OpenAI API: tests use a fake LLM, and the model in `config/llm.json` stays unset until the user picks one.
+
+### 2.1 Agent-only world actions (same world for everyone; the baseline never uses them)
+
+- [ ] `reserve` (firm for given victims, or hold: targeted at an expected critical, or at most 1 general hold per hospital; holds expire after 15 minutes, are released when their critical goes elsewhere, and convert when it is reserved here). `set_destination` reuses an existing firm reservation, otherwise creates one as in Phase 1.
+- [ ] `release_hold`, early `release_patient`.
+- [ ] Hospital transport vehicles as units (`H1-TV1`): `transfer_patient` (5 minutes preparation, remaining treatment continues at the receiver), `lend_vehicle` (carries like BLS while lent, returns after the end time once free).
+- [ ] `lend_staff` (travels by road, returns after the end time once its patients are done).
+- [ ] `redirect` (ALS, before loading, once per trip, only to an incident with a waiting critical) and `reroute` (while transporting, once per trip unless by the Arbiter, firm reservation at the new hospital, deadlines still met).
+- [ ] Walk-ins take a hold before breaking a firm reservation. Permission checks (`by`) and a rejection reason for every rule. Events for all of it.
+- [ ] Metrics: wasted hold minutes, holds, transfers, reroutes, redirects, early releases, loans.
+- [ ] Greedy runs unchanged in behaviour; all Phase 1 tests still pass.
+
+### 2.2 LLM wrapper, tools and agents (`coordination/`)
+
+- [ ] `coordination/llm.py`: modes `off`, `fake` (tests), `replay` and `live`/`record` (OpenAI Agents SDK, pinned model, temperature 0). Every call recorded (`llm_calls.jsonl`); outputs validated with Pydantic; invalid or missing output falls back to a rule, logged.
+- [ ] `coordination/tools.py`: read-only scoped views (incident facts; Dispatch: its units and hospital capabilities only; Hospital: only its own hospital; Arbiter: everything), also offered to the LLM as function tools in live mode.
+- [ ] Agents: rules (code) build the numbers and the candidate options; a fast path decides when only one option fits; otherwise the LLM picks among the candidates with a one-line reason; a fallback rule covers anything invalid.
+  - [ ] Incident Assessment: report (response type, units needed, urgency, care counts) plus LLM context from the description.
+  - [ ] Dispatch: unit plan for competing requests (shortfall plans: queue, wait for a unit, redirect, mutual aid, swap) and admission awards from hospital offers (escalate when no offer meets a deadline).
+  - [ ] Hospital: mood, admission offer by the section 4.3 ladder, replies to transfer, staff and vehicle requests (EMTALA rules).
+  - [ ] Arbiter: options 1 to 7 in order, stopping at the first that meets the deadline.
+- [ ] Tests: every agent returns valid output on hand-built cases with no API key (fast path, LLM choice, invalid LLM output → fallback, replay).
+
+### Phase 2 is done when
+
+- [ ] All tests pass with no network and no API key.
+- [ ] Each agent returns valid output on hand-built cases (rules, fake LLM, replay).
+- [ ] The greedy baseline on seed 42 gives the same events and metrics as before (apart from new metric keys).
+
+---
+
 ## Later phases (outline only; detailed instructions will be added when each phase starts)
 
-2. **Agents:** the four agents, LLM wrapper with record and replay, read-only tools, agent-only actions.
 3. **Negotiation:** messages, bus, time costs, limits, orchestrator, Arbiter escalation, ablations.
 4. **Dashboard v2:** agent activity, negotiation history, baseline vs agents side by side.
 5. **Evaluation:** seeds, repeats, ablations, results from one button.
 
 ## Things not to do
 
-- Don't build Phase 2+ features (holds, transfers, lending, reroutes, early release, agents, LLM calls) in Phase 1.
+- Don't build Phase 3+ features (message bus, time costs, orchestrator, live agent runs) in Phase 2.
 - Don't download map or road data at simulation time or in tests.
 - Don't use straight-line distance anywhere a travel time is needed; always use the road network.
 - Don't put simulation logic in the dashboard.

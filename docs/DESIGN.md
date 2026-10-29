@@ -176,6 +176,12 @@ The simulator emits events into a JSONL log, including: `incident_reported`, `sc
 | "Victim waiting anywhere" (idle minutes) | Any incident victim reported but not yet delivered to a hospital |
 | Utilization | `1 - real free capacity / ER slots`, with real free capacity = min(free ER slots, free doctor slots, free nurse slots) |
 | Unit bases (current data) | The OpenStreetMap station query failed (server overloaded), so `places.json` has no stations: ALS units are based at H1 to H3, and BLS, fire and rescue units at seeded random road nodes (the 3.4 fallback). Re-running `scripts/fetch_roads.py` later adds real stations and changes every scenario's bases |
+| Transferred patient | Treatment continues at the receiver for the remaining minutes once staff are free there |
+| Walk-in, no free slot | Takes a hold first (latest created), then a firm reservation (expected latest) |
+| Lent hospital vehicle | Carries like a BLS: up to 2 non-critical or stabilized patients |
+| Redirect | ALS only, before loading (driving to a scene, or on scene with no victims assigned), once per trip |
+| Holds | A targeted hold names the expected critical victim; a general hold names none (max 1 per hospital). Wasted hold minutes = minutes held by holds that expired unused |
+| Reroute deadline | Rejected if any victim whose deadline has not yet passed would arrive after it at the new hospital |
 | Metrics population | Primary and secondary metrics count incident victims only; walk-ins add load |
 
 ---

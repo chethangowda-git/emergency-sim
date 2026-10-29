@@ -9,6 +9,7 @@ from collections import Counter
 
 IDLE_UTILIZATION = 0.60
 BUSY_EXCLUDES = ("idle", "returning")
+FLEET_KINDS = ("ALS", "BLS", "FIRE", "RESCUE")
 
 
 def pct(part: int, whole: int) -> float | None:
@@ -73,7 +74,8 @@ def response_times(events: list[dict], ambulances: set[str]) -> dict[str, int]:
 
 
 def unit_utilization(timeline: list[dict]) -> dict[str, float]:
-    """Share of minutes each unit kind spends busy (anything but idle or returning)."""
+    """Share of minutes each unit kind spends busy (anything but idle or returning).
+    `overall` covers the Dispatch fleet only; hospital vehicles (HV) are reported apart."""
     busy: Counter = Counter()
     total: Counter = Counter()
     for minute in timeline:
@@ -81,8 +83,22 @@ def unit_utilization(timeline: list[dict]) -> dict[str, float]:
             total[u["kind"]] += 1
             busy[u["kind"]] += int(u["state"] not in BUSY_EXCLUDES)
     out = {k: pct(busy[k], total[k]) for k in sorted(total)}
-    out["overall"] = pct(sum(busy.values()), sum(total.values()))
+    out["overall"] = pct(sum(busy[k] for k in FLEET_KINDS), sum(total[k] for k in FLEET_KINDS))
     return out
+
+
+def wasted_hold_minutes(events: list[dict]) -> int:
+    """Minutes held by holds that expired without a patient (DESIGN 3.8)."""
+    return sum(e["minutes"] for e in events if e["type"] == "hold_expired")
+
+
+def coordination_counts(events: list[dict]) -> dict[str, int]:
+    kinds = Counter(e["type"] for e in events)
+    early = sum(1 for e in events if e["type"] == "patient_released" and e.get("early"))
+    return {"holds_placed": kinds["hold_placed"], "holds_expired": kinds["hold_expired"],
+            "transfers": kinds["transfer_completed"], "reroutes": kinds["unit_rerouted"],
+            "redirects": kinds["unit_redirected"], "early_releases": early,
+            "staff_loans": kinds["staff_lent"], "vehicle_loans": kinds["vehicle_lent"]}
 
 
 def rejected_actions(events: list[dict]) -> dict:
@@ -112,6 +128,8 @@ def compute(victims: list[dict], timeline: list[dict], events: list[dict]) -> di
         "deadlines_missed": kinds["deadline_missed"],
         "walk_ins": kinds["walk_in"],
         "reservations_broken": kinds["reservation_broken"],
+        "wasted_hold_minutes": wasted_hold_minutes(events),
+        **coordination_counts(events),
     }
 
 

@@ -22,7 +22,7 @@ def care_need_for(incident_type: str, severity: str) -> str:
 
 def carry_rejection(kind: str, severities: list[str]) -> str | None:
     """None if a unit of `kind` may carry these victims together, else a reason."""
-    if kind not in ("ALS", "BLS"):
+    if kind not in ("ALS", "BLS", "HV"):
         return "capability_mismatch"
     criticals = severities.count("critical")
     if criticals and kind != "ALS":
@@ -36,6 +36,11 @@ def carry_rejection(kind: str, severities: list[str]) -> str | None:
 
 def can_treat(hospital: Hospital, care_need: str) -> bool:
     return care_need in hospital.capabilities
+
+
+def treatment_minutes(v_original: str, remaining: int | None, table: dict[str, int]) -> int:
+    """Full treatment by original severity, or what is left after a transfer."""
+    return remaining if remaining is not None else table[v_original]
 
 
 def free_slots(hospital: Hospital, reserved: int) -> int:

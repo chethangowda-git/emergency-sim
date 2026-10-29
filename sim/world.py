@@ -9,9 +9,12 @@ import copy
 from collections import defaultdict
 
 from sim import hospital_flow
-from sim.actions import Action, AssignTeam, SendToScene, SetDestination
+from sim.actions import (Action, AssignTeam, LendStaff, LendVehicle, Redirect, ReleaseHold, ReleasePatient,
+                         Reroute, Reserve, SendToScene, SetDestination, TransferPatient)
+from sim.agent_actions import AgentActions
 from sim.config import SimConfig
-from sim.models import TEAM_FOR_REQUIREMENT, TEAM_KINDS, Reservation, Scenario, Trip, Unit, Victim
+from sim.models import (TEAM_FOR_REQUIREMENT, TEAM_KINDS, VEHICLE_KIND, Reservation, Scenario, Staff, Trip, Unit,
+                        Victim)
 from sim.roads import RoadNetwork
 from sim.rules import carry_rejection, free_slots, loading_ready_at, victim_priority
 from sim.views import WorldView, build_snapshot
@@ -19,8 +22,17 @@ from sim.views import WorldView, build_snapshot
 FREE_STATES = ("idle", "returning")
 NOT_DEPARTED = 10**9
 
+CHECKS = {SendToScene: "_check_send", AssignTeam: "_check_team", SetDestination: "_check_destination",
+          Reserve: "_check_reserve", ReleaseHold: "_check_release_hold", ReleasePatient: "_check_release_patient",
+          TransferPatient: "_check_transfer", LendVehicle: "_check_lend_vehicle", LendStaff: "_check_lend_staff",
+          Redirect: "_check_redirect", Reroute: "_check_reroute"}
+EFFECTS = {SendToScene: "_do_send", AssignTeam: "_do_team", SetDestination: "_set_destination",
+           Reserve: "_do_reserve", ReleaseHold: "_do_release_hold", ReleasePatient: "_do_release_patient",
+           TransferPatient: "_do_transfer", LendVehicle: "_do_lend_vehicle", LendStaff: "_do_lend_staff",
+           Redirect: "_do_redirect", Reroute: "_do_reroute"}
 
-class World:
+
+class World(AgentActions):
     def __init__(self, scenario: Scenario, roads: RoadNetwork, cfg: SimConfig) -> None:
         sc = copy.deepcopy(scenario)
         self.cfg, self.roads, self.seed = cfg, roads, sc.seed
@@ -29,8 +41,12 @@ class World:
         self.victims = {v.id: v for v in sc.victims}
         self.hospitals = {h.id: h for h in sc.hospitals}
         self.units = {u.id: Unit(u.id, u.kind, u.base, u.base_node, u.base_node) for u in sc.units}
+        for h in sc.hospitals:
+            for veh in h.vehicles:
+                self.units[veh.id] = Unit(veh.id, VEHICLE_KIND, h.id, veh.node, veh.node, owner=h.id)
         self.reported: list[str] = []
         self.reservations: dict[str, Reservation] = {}
+        self.staff_moving: list[tuple[int, str, Staff]] = []
         self.trips: list[Trip] = []
         self.events: list[dict] = []
         self.timeline: list[dict] = []
@@ -58,8 +74,12 @@ class World:
         self._report_incidents()
         self._arrivals()
         self._clearances()
+        self._transfer_departures()
         self._departures()
         self._handovers()
+        self._lending_ends()
+        self._staff_moves()
+        self._expire_holds()
         self._walk_ins()
         for hid in sorted(self.hospitals):
             hospital_flow.run_minute(self.hospitals[hid], self.victims, self.cfg, self.t, self.emit)
@@ -124,8 +144,8 @@ class World:
                                   self._expected_arrival, self.emit)
 
     def _expected_arrival(self, res: Reservation) -> int:
-        u = self.units[res.unit]
-        if u.state == "transporting" and u.trip is not None:
+        u = self.units.get(res.unit) if res.unit else None
+        if u is not None and u.state == "transporting" and u.trip is not None:
             return u.trip.arrive_t
         return NOT_DEPARTED
 
@@ -152,7 +172,8 @@ class World:
 
     def _return_to_base(self, u: Unit) -> None:
         u.incident, u.hospital, u.victims = None, None, []
-        u.on_scene_since = u.handover_until = None
+        u.on_scene_since = u.handover_until = u.prep_until = None
+        u.redirects = u.reroutes = 0
         if not self._moving(u) and u.node == u.base_node:
             u.state, u.trip = "idle", None
             self.emit("unit_at_base", unit=u.id)
@@ -169,8 +190,8 @@ class World:
             purpose, u.node, u.trip = u.trip.purpose, u.trip.dest_node, None
             if purpose == "to_scene":
                 self._on_scene(u)
-            elif purpose == "to_hospital":
-                self._deliver(u)
+            elif purpose in ("to_hospital", "transfer"):
+                self._deliver(u, transfer=purpose == "transfer")
             else:
                 u.state = "idle"
                 self.emit("unit_at_base", unit=u.id)
@@ -195,7 +216,8 @@ class World:
     def _departures(self) -> None:
         for uid in sorted(self.units):
             u = self.units[uid]
-            if u.hospital and u.victims and (ready := self._ready_at(u)) is not None and self.t >= ready:
+            if (u.state == "on_scene" and u.hospital and u.victims
+                    and (ready := self._ready_at(u)) is not None and self.t >= ready):
                 self._depart(u)
 
     def _depart(self, u: Unit) -> None:
@@ -209,7 +231,7 @@ class World:
         self.emit("transport_started", unit=u.id, hospital=u.hospital, victims=list(u.victims),
                   trip=trip.id, eta=trip.arrive_t)
 
-    def _deliver(self, u: Unit) -> None:
+    def _deliver(self, u: Unit, transfer: bool = False) -> None:
         h = self.hospitals[u.hospital]
         left = []
         for vid in u.victims:
@@ -218,10 +240,14 @@ class World:
             if res.status != "active":
                 left.append(vid)
                 continue
-            res.status = "used"
+            res.status, res.ended_at = "used", self.t
             hospital_flow.admit(h, v, self.t)
-            self.emit("patient_delivered", victim=vid, hospital=h.id, unit=u.id,
-                      on_time=v.deadline is not None and self.t <= v.deadline)
+            if transfer:
+                v.transfers += 1
+                self.emit("transfer_completed", victim=vid, hospital=h.id, vehicle=u.id)
+            else:
+                self.emit("patient_delivered", victim=vid, hospital=h.id, unit=u.id,
+                          on_time=v.deadline is not None and self.t <= v.deadline)
         u.victims = left
         if left:
             u.state = "at_hospital_no_slot"
@@ -243,31 +269,23 @@ class World:
     def apply(self, actions: list[Action]) -> list[dict]:
         mark = len(self.events)
         for action in actions:
-            reason = self._validate(action)
+            check = CHECKS.get(type(action))
+            reason = getattr(self, check)(action) if check else "unknown_action"
             if reason:
                 self.emit("action_rejected", reason=reason, **action.to_dict())
             else:
                 self.emit("action_applied", **action.to_dict())
-                self._execute(action)
+                getattr(self, EFFECTS[type(action)])(action)
         return self.events[mark:]
 
-    def _validate(self, a: Action) -> str | None:
-        if isinstance(a, SendToScene):
-            return self._check_send(a)
-        if isinstance(a, AssignTeam):
-            return self._check_team(a)
-        if isinstance(a, SetDestination):
-            return self._check_destination(a)
-        return "unknown_action"
-
-    def _execute(self, a: Action) -> None:
-        if isinstance(a, SendToScene):
-            self._dispatch(self.units[a.unit], a.incident)
-        elif isinstance(a, AssignTeam):
-            self.incidents[a.incident].team = a.team
-            self._dispatch(self.units[a.team], a.incident)
-        else:
-            self._set_destination(a)
+    def _can_transport(self, u: Unit) -> str | None:
+        """Ambulances always; a hospital vehicle while lent to Dispatch or stuck at a door."""
+        if u.is_ambulance:
+            return None
+        if u.is_vehicle:
+            lent = u.lent_until is not None and self.t < u.lent_until
+            return None if lent or u.state == "at_hospital_no_slot" else "not_lent"
+        return "capability_mismatch"
 
     def _check_send(self, a: SendToScene) -> str | None:
         u, inc = self.units.get(a.unit), a.incident
@@ -275,8 +293,9 @@ class World:
             return "unknown_unit"
         if inc not in self.reported:
             return "unknown_incident"
-        if not u.is_ambulance:
-            return "capability_mismatch"
+        reason = self._can_transport(u)
+        if reason:
+            return reason
         if u.state not in FREE_STATES:
             return "unit_busy"
         if not self.waiting_victims(inc):
@@ -306,8 +325,9 @@ class World:
             return "unknown_unit"
         if h is None:
             return "unknown_hospital"
-        if not u.is_ambulance:
-            return "capability_mismatch"
+        reason = self._can_transport(u)
+        if reason:
+            return reason
         if not a.victims:
             return "no_victims"
         if any(v not in self.victims for v in a.victims):
@@ -321,7 +341,8 @@ class World:
             return reason
         if any(v.care_need not in h.capabilities for v in vs):
             return "capability_mismatch"
-        if free_slots(h, hospital_flow.reserved_count(h, self.reservations)) < len(vs):
+        needed = sum(1 for v in vs if not self._firm_at(h.id, v.id) and not self._hold_for(h.id, v.id))
+        if free_slots(h, hospital_flow.reserved_count(h, self.reservations)) < needed:
             return "er_full"
         return None
 
@@ -342,6 +363,13 @@ class World:
                 return "victim_unavailable"
         return None
 
+    def _do_send(self, a: SendToScene) -> None:
+        self._dispatch(self.units[a.unit], a.incident)
+
+    def _do_team(self, a: AssignTeam) -> None:
+        self.incidents[a.incident].team = a.team
+        self._dispatch(self.units[a.team], a.incident)
+
     def _dispatch(self, u: Unit, iid: str) -> None:
         u.incident, u.hospital, u.victims = iid, None, []
         u.state = "to_scene"
@@ -349,14 +377,19 @@ class World:
         self.emit("unit_dispatched", unit=u.id, incident=iid, trip=trip.id, eta=trip.arrive_t)
 
     def _set_destination(self, a: SetDestination) -> None:
+        """Uses a firm reservation the hospital already placed for a victim, else creates one."""
         u = self.units[a.unit]
         from_door = u.state == "at_hospital_no_slot"
         ordered = sorted(a.victims, key=lambda vid: victim_priority(
             self.victims[vid].severity, self.victims[vid].deadline, vid))
         for vid in ordered:
-            res = Reservation(f"R{len(self.reservations) + 1:03d}", a.hospital, u.id, vid, self.t)
-            self.reservations[res.id] = res
             v = self.victims[vid]
+            res = self._firm_at(a.hospital, vid) or self._place_firm(a.hospital, vid, u.id)
+            for other in list(self.reservations.values()):
+                if (other.kind == "firm" and other.victim == vid and other is not res
+                        and other.status == "active"):
+                    self._end_reservation(other, "released", "reservation_released", reason="replaced")
+            res.unit = u.id
             v.reservation, v.unit = res.id, u.id
             v.status = "at_door" if from_door else "assigned"
         u.hospital = a.hospital

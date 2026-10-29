@@ -42,6 +42,8 @@ def build_snapshot(w: World) -> dict:
         "hospitals": [_hospital(w, hid) for hid in sorted(w.hospitals)],
         "waiting_victims": sum(1 for iid in w.reported for vid in w.incidents[iid].victim_ids
                                if w.victims[vid].delivered_at is None),
+        "staff_moving": [{"staff": s.id, "kind": s.kind, "to": dest, "arrives_at": arrive, "home": s.home}
+                         for arrive, dest, s in sorted(w.staff_moving, key=lambda m: (m[0], m[2].id))],
     }
 
 
@@ -64,12 +66,16 @@ def _unit(w: World, uid: str) -> dict:
     return {"id": u.id, "kind": u.kind, "state": u.state, "node": u.node, "base": u.base,
             "base_node": u.base_node, "incident": u.incident, "hospital": u.hospital,
             "victims": list(u.victims), "trip": u.trip.id if moving else None,
-            "on_scene_since": u.on_scene_since, "lat": round(lat, 6), "lon": round(lon, 6)}
+            "eta": u.trip.arrive_t if moving else None, "on_scene_since": u.on_scene_since,
+            "handover_until": u.handover_until, "owner": u.owner, "lent_until": u.lent_until,
+            "prep_until": u.prep_until, "redirects": u.redirects, "reroutes": u.reroutes,
+            "lat": round(lat, 6), "lon": round(lon, 6)}
 
 
 def _hospital(w: World, hid: str) -> dict:
     h = w.hospitals[hid]
-    reserved = sum(1 for r in w.reservations.values() if r.hospital == hid and r.status == "active")
+    active = [r for r in w.reservations.values() if r.hospital == hid and r.status == "active"]
+    reserved = len(active)
     statuses = [w.victims[v].status for v in h.er]
     return {
         "id": h.id, "name": h.name, "node": h.node, "lat": h.lat, "lon": h.lon,
@@ -79,9 +85,23 @@ def _hospital(w: World, hid: str) -> dict:
         "in_treatment": statuses.count("in_treatment") + statuses.count("transferable"),
         "ready_for_release": statuses.count("ready_for_release"), "boarding": statuses.count("boarding"),
         "ward_beds": h.ward_beds, "ward_used": len(h.ward),
-        "doctors": [{"id": d.id, "skills": list(d.skills), "patients": list(d.patients)} for d in h.doctors],
-        "nurses": [{"id": n.id, "patients": list(n.patients)} for n in h.nurses],
-        "vehicles": [{"id": v.id, "state": "idle"} for v in h.vehicles],
+        "doctors": [{"id": d.id, "skills": list(d.skills), "patients": list(d.patients), "home": d.home,
+                     "lent_until": d.lent_until} for d in h.doctors],
+        "nurses": [{"id": n.id, "patients": list(n.patients), "home": n.home, "lent_until": n.lent_until}
+                   for n in h.nurses],
+        "vehicles": [{"id": u.id, "state": u.state, "lent_until": u.lent_until}
+                     for u in (w.units[v.id] for v in h.vehicles)],
+        "patients": [_patient(w.victims[v]) for v in h.er],
+        "holds": [{"id": r.id, "victim": r.victim, "created_at": r.created_at, "expires_at": r.expires_at}
+                  for r in active if r.kind == "hold"],
+        "firm": [{"id": r.id, "victim": r.victim, "unit": r.unit} for r in active if r.kind == "firm"],
         "free_doctor_slots": free_doctor_slots(h), "free_nurse_slots": free_nurse_slots(h),
         "real_free": real_free_capacity(h, reserved), "utilization": round(utilization(h, reserved), 4),
     }
+
+
+def _patient(v) -> dict:
+    return {"id": v.id, "status": v.status, "severity": v.severity, "original_severity": v.original_severity,
+            "care_need": v.care_need, "walk_in": v.walk_in, "delivered_at": v.delivered_at,
+            "treatment_started_at": v.treatment_started_at, "treatment_minutes": v.treatment_minutes,
+            "ready_at": v.ready_at, "transferable_at": v.transferable_at, "transfer_deadline": v.transfer_deadline}

@@ -19,6 +19,7 @@ UNIT_STYLE = {
     "BLS": {"hex": "#1565C0", "rgb": [21, 101, 192], "short": "BLS", "label": "BLS ambulance (non-critical only)"},
     "FIRE": {"hex": "#37474F", "rgb": [55, 71, 79], "short": "FIRE", "label": "Fire team"},
     "RESCUE": {"hex": "#6D4C41", "rgb": [109, 76, 65], "short": "RES", "label": "Rescue team"},
+    "HV": {"hex": "#558B2F", "rgb": [85, 139, 47], "short": "TV", "label": "Hospital transport vehicle"},
 }
 HOSPITAL_HEX = "#00796B"
 HOSPITAL_RGB = [0, 121, 107]
@@ -32,6 +33,8 @@ IDLE_ALPHA = 140
 # ----- badges -----
 
 def unit_badge_text(unit: dict) -> str:
+    if unit["kind"] == "HV":
+        return unit["id"]
     return UNIT_STYLE[unit["kind"]]["short"] + unit["id"][len(unit["kind"]):]
 
 
@@ -217,7 +220,8 @@ def _dot(rgb: list[int]) -> str:
 
 
 def legend_html() -> str:
-    units = "&nbsp;&nbsp; ".join(f"{_badge(s['short'] + '1', s['hex'])} {s['label']}" for s in UNIT_STYLE.values())
+    units = "&nbsp;&nbsp; ".join(
+        f"{_badge('H1-TV1' if k == 'HV' else s['short'] + '1', s['hex'])} {s['label']}" for k, s in UNIT_STYLE.items())
     return (
         "<div style='font-size:0.85rem;line-height:2.1'>"
         f"{units}<br>"

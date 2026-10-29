@@ -4,7 +4,8 @@ from __future__ import annotations
 import pandas as pd
 
 FREE = ("idle", "returning")
-KIND_NAMES = {"ALS": "ALS ambulances", "BLS": "BLS ambulances", "FIRE": "Fire teams", "RESCUE": "Rescue teams"}
+KIND_NAMES = {"ALS": "ALS ambulances", "BLS": "BLS ambulances", "FIRE": "Fire teams", "RESCUE": "Rescue teams",
+              "HV": "Hospital vehicles"}
 
 
 def unit_table(minute: dict) -> pd.DataFrame:
