@@ -4,3 +4,5 @@ CLAUDE.local.md
 __pycache__/
 .venv/
 .DS_Store
+cache/
+.pytest_cache/

@@ -8,7 +8,7 @@ A multi-agent emergency response system: a **deterministic, seeded simulator on 
 
 **`docs/DESIGN.md` is the source of truth.** Read the sections a task references before coding. If code and DESIGN.md disagree, DESIGN.md wins. If DESIGN.md is ambiguous or seems wrong, stop and ask; don't invent rules.
 
-The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 1.** Don't build anything from later phases.
+The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 1.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
 
 ## Golden rules
 
@@ -53,8 +53,12 @@ sim/
   config.py            # SimConfig dataclass, all tunables from DESIGN section 3
   roads.py             # load network, fastest route, route geometry, position along route
   models.py            # Incident, Victim, Hospital, Staff, Unit, Reservation, ...
+  rules.py             # small pure rules: care needs, loading, slots, real capacity
+  actions.py           # SendToScene, SetDestination, AssignTeam
   generator.py         # seeded scenario: incidents, victims, walk-in schedule, fleet
-  world.py             # World: step(), actions, event log, views
+  world.py             # World: step(), actions, event log
+  hospital_flow.py     # patient lifecycle inside a hospital, walk-ins
+  views.py             # World.snapshot() data and road-time helpers for policies
   metrics.py           # DESIGN section 11 (Phase 1 subset)
   runner.py            # run(seed, policy, progress_cb) -> run folder
 policies/
@@ -83,7 +87,7 @@ runs/                  # gitignored; one folder per run
 ## Testing rules
 
 - No network in tests. Tests use a **tiny hand-made road graph** fixture (a few nodes and edges) plus the committed real network for one smoke test.
-- Determinism: the same seed produces byte-identical `events.jsonl`, `routes.json` and `metrics.json`.
+- Determinism: the same seed produces byte-identical `events.jsonl`, `routes.json`, `timeline.jsonl` and `metrics.json`.
 - Every world action: success path, each rejection reason, effects on reservations and timing.
 - Baseline: follows DESIGN section 10 exactly (shortest road time choices; never holds, transfers, lends, reroutes early or releases early).
 - Metrics: small scenarios with hand-computed answers.
@@ -105,51 +109,51 @@ Read DESIGN sections 3, 10, 11, 13, 15 and 17.
 
 ### 1.1 Area and road data
 
-- [ ] **First, ask the user which city and area to use** (about 5 to 10 km across, with at least 3 hospitals). Save it in `config/area.json`.
-- [ ] `scripts/fetch_roads.py`: download the drivable network with OSMnx; keep the largest strongly connected component; add edge speeds and travel times (default speeds where limits are missing); save `network.graphml`.
-- [ ] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5).
-- [ ] Commit both files. Simulation code only reads them.
+- [x] **First, ask the user which city and area to use** (about 5 to 10 km across, with at least 3 hospitals). Save it in `config/area.json`.
+- [x] `scripts/fetch_roads.py`: download the drivable network with OSMnx; keep the largest strongly connected component; add edge speeds and travel times (default speeds where limits are missing); save `network.graphml`.
+- [x] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5). (Stations still missing: Overpass was overloaded, so `--skip-stations` was used; re-run the script to add them.)
+- [x] Commit both files. Simulation code only reads them.
 
 ### 1.2 Roads module
 
-- [ ] Load the graph once; fastest route by travel time (cached per origin and destination); travel minutes = route time x emergency factor, rounded up, minimum 1.
-- [ ] Route geometry as a list of (lat, lon) points following the street shapes, with cumulative times, so `position_at(route, depart_t, t)` interpolates smoothly (including fractional minutes for the dashboard).
-- [ ] Tests on the tiny fixture graph.
+- [x] Load the graph once; fastest route by travel time (cached per origin and destination); travel minutes = route time x emergency factor, rounded up, minimum 1.
+- [x] Route geometry as a list of (lat, lon) points following the street shapes, with cumulative times, so `position_at(route, depart_t, t)` interpolates smoothly (including fractional minutes for the dashboard).
+- [x] Tests on the tiny fixture graph.
 
 ### 1.3 World (Phase 1 subset of DESIGN section 3)
 
-- [ ] Models: incidents (including one surge event), victims, hospitals (ER slots, ward beds, doctors with skills, nurses, transport vehicles), units (ALS, BLS, fire team, rescue team), firm reservations.
-- [ ] Generator: seeded incidents at random network nodes, victims (severity, care need, deadline), descriptions, walk-in schedule, fleet and bases (DESIGN 3.4).
-- [ ] Patient flow: arrival, staff assignment, treatment, `transferable` state for criticals after 20 minutes (state only; transfers come in Phase 2), `ready_for_release`, automatic release after 30 minutes, ward or boarding.
-- [ ] Scene rules: fire and collapse need clearance by the right team (10 minutes after arrival); 5 minutes on scene; 5 minutes handover; return to base along the road.
-- [ ] Unit loading rules: ALS carries 1 critical or 2 non-critical; BLS 2 non-critical; criticals only in ALS.
-- [ ] Walk-ins (DESIGN 3.7): always get a slot; may break a firm reservation (`reservation_broken`); the unit learns this on arrival (`arrived_no_slot`) and may be given a new destination.
-- [ ] Actions: `send_to_scene`, `set_destination` (also allowed after `arrived_no_slot`), `assign_team`. Validate and log every action.
-- [ ] Event log (`events.jsonl`) with every event in DESIGN 3.10 that exists in Phase 1, and `routes.json` with every trip's geometry and timing.
-- [ ] Views: `World.snapshot()` for the policy and the dashboard.
+- [x] Models: incidents (including one surge event), victims, hospitals (ER slots, ward beds, doctors with skills, nurses, transport vehicles), units (ALS, BLS, fire team, rescue team), firm reservations.
+- [x] Generator: seeded incidents at random network nodes, victims (severity, care need, deadline), descriptions, walk-in schedule, fleet and bases (DESIGN 3.4).
+- [x] Patient flow: arrival, staff assignment, treatment, `transferable` state for criticals after 20 minutes (state only; transfers come in Phase 2), `ready_for_release`, automatic release after 30 minutes, ward or boarding.
+- [x] Scene rules: fire and collapse need clearance by the right team (10 minutes after arrival); 5 minutes on scene; 5 minutes handover; return to base along the road.
+- [x] Unit loading rules: ALS carries 1 critical or 2 non-critical; BLS 2 non-critical; criticals only in ALS.
+- [x] Walk-ins (DESIGN 3.7): always get a slot; may break a firm reservation (`reservation_broken`); the unit learns this on arrival (`arrived_no_slot`) and may be given a new destination.
+- [x] Actions: `send_to_scene`, `set_destination` (also allowed after `arrived_no_slot`), `assign_team`. Validate and log every action.
+- [x] Event log (`events.jsonl`) with every event in DESIGN 3.10 that exists in Phase 1, and `routes.json` with every trip's geometry and timing.
+- [x] Views: `World.snapshot()` for the policy and the dashboard.
 
 ### 1.4 Baseline and metrics
 
-- [ ] `policies/base.py`: `Policy.decide(view, events) -> list[Action]`, called once per minute before `step()`.
-- [ ] `policies/greedy.py`: exactly DESIGN section 10, using road travel times. Zero decision time.
-- [ ] `sim/metrics.py`: critical on time %, unserved criticals, average report-to-care time, ER load balance, per-hospital idle and overload minutes, response time, unit utilization, rejected actions.
-- [ ] `sim/runner.py`: `run(seed, policy, progress_cb)` writes `runs/<run-id>/` with `config.json`, `scenario.json`, `events.jsonl`, `routes.json`, `metrics.json`.
-- [ ] `cli.py run` (headless, for tests and debugging).
+- [x] `policies/base.py`: `Policy.decide(view, events) -> list[Action]`, called once per minute before `step()`.
+- [x] `policies/greedy.py`: exactly DESIGN section 10, using road travel times. Zero decision time.
+- [x] `sim/metrics.py`: critical on time %, unserved criticals, average report-to-care time, ER load balance, per-hospital idle and overload minutes, response time, unit utilization, rejected actions.
+- [x] `sim/runner.py`: `run(seed, policy, progress_cb)` writes `runs/<run-id>/` with `config.json`, `scenario.json`, `events.jsonl`, `routes.json`, `metrics.json`, plus `timeline.jsonl` (state per minute, for playback) and `victims.json` (final victim records).
+- [x] `cli.py run` (headless, for tests and debugging).
 
 ### 1.5 Dashboard
 
-- [ ] Sidebar: seed, policy (greedy only for now), **Run simulation** (progress bar), **New scenario**, **Past runs**, play/pause, speed (1x, 5x, 20x), time slider.
-- [ ] Map (pydeck): free basemap that needs no API key; road-following unit movement with smooth interpolation; incidents appearing at their report time (red with criticals, amber without, sized by victims); remaining route dashed; hospitals with ER use. Legend.
-- [ ] Panels synced to the playback minute: units free and busy by type; per-hospital ER, ward, doctors, nurses; live events feed; KPIs.
-- [ ] Smooth playback without full-page flicker (for example a Streamlit fragment that reruns on a timer, updating only the map and panels).
-- [ ] Launchers for macOS, Windows and Linux.
+- [x] Sidebar: seed, policy (greedy only for now), **Run simulation** (progress bar), **New scenario**, **Past runs**, play/pause, speed (1x, 5x, 20x), time slider.
+- [x] Map (pydeck): free basemap that needs no API key; road-following unit movement with smooth interpolation; incidents appearing at their report time (red with criticals, amber without, sized by victims); remaining route dashed; hospitals with ER use. Legend.
+- [x] Panels synced to the playback minute: units free and busy by type; per-hospital ER, ward, doctors, nurses; live events feed; KPIs.
+- [x] Smooth playback without full-page flicker (for example a Streamlit fragment that reruns on a timer, updating only the map and panels).
+- [x] Launchers for macOS, Windows and Linux.
 
 ### Phase 1 is done when
 
-- [ ] All tests pass with no network.
+- [x] All tests pass with no network.
 - [ ] From the launcher: Run simulation for seed 42 → ambulances drive real streets to incidents and hospitals; all panels update in sync; Past runs reopens it.
-- [ ] Running seed 42 twice gives identical files.
-- [ ] README explains launching, the chosen area and the assumptions.
+- [x] Running seed 42 twice gives identical files.
+- [x] README explains launching, the chosen area and the assumptions.
 
 ---
 

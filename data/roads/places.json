@@ -1,0 +1,28 @@
+{
+  "area": "Central Boston, MA",
+  "hospitals": [
+    {
+      "id": "H1",
+      "name": "Central Trauma Center",
+      "node": "61506639",
+      "lat": 42.3495156,
+      "lon": -71.0628787
+    },
+    {
+      "id": "H2",
+      "name": "Northside General",
+      "node": "61321415",
+      "lat": 42.3757029,
+      "lon": -71.1046919
+    },
+    {
+      "id": "H3",
+      "name": "Eastside Community",
+      "node": "61363893",
+      "lat": 42.3385419,
+      "lon": -71.1092953
+    }
+  ],
+  "ambulance_stations": [],
+  "fire_stations": []
+}

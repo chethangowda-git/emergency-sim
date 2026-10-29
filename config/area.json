@@ -1,0 +1,16 @@
+{
+  "name": "Central Boston, MA",
+  "description": "Back Bay, South End, Fenway, Longwood, Downtown, North End and Charlestown",
+  "bbox": {"west": -71.110, "south": 42.330, "east": -71.045, "north": 42.385},
+  "emergency_factor": 0.85,
+  "default_speeds_kph": {
+    "motorway": 89, "motorway_link": 56,
+    "trunk": 72, "trunk_link": 48,
+    "primary": 56, "primary_link": 40,
+    "secondary": 48, "secondary_link": 40,
+    "tertiary": 40, "tertiary_link": 40,
+    "residential": 40, "unclassified": 40,
+    "living_street": 16, "service": 24
+  },
+  "fallback_speed_kph": 40
+}

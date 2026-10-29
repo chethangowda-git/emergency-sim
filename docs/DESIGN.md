@@ -155,6 +155,29 @@ All actions are validated. A rejected action returns a reason and is logged.
 
 The simulator emits events into a JSONL log, including: `incident_reported`, `scene_cleared`, `unit_on_scene`, `transport_started`, `patient_delivered`, `walk_in`, `reservation_broken`, `stabilized`, `ready_for_release`, `patient_released`, `hold_expired`, `deadline_missed`, `action_applied`, `action_rejected`. Agent messages are logged in the same stream.
 
+### 3.11 Scenario defaults and clarifications (agreed at the start of Phase 1)
+
+| Topic | Rule |
+|---|---|
+| Area | Central Boston, MA (Back Bay, South End, Fenway, Longwood, Downtown, North End, Charlestown), about 5 x 6 km |
+| Incidents per scenario | 12: 11 normal incidents with 1 to 4 victims each, plus 1 surge event (6 to 10 victims) |
+| Incident types (normal) | traffic_accident 35%, medical_emergency 35%, building_fire 20%, structural_collapse 10% |
+| Surge event | bus_fire or multi-vehicle pileup (a traffic_accident), 50/50, reported between minute 30 and 90 |
+| Victim severity mix | 25% critical, 35% serious, 40% minor |
+| "On time" for criticals | The hospital must have the victim's care need as a capability (a critical burns victim counts only at H1 or H3) |
+| Doctor skills | Every doctor has `general` plus one specialty. H1: trauma, trauma, burns. H2: trauma, trauma. H3: burns, burns |
+| Walk-in care need | Minor walk-ins need `general`; others are drawn from the receiving hospital's own capabilities |
+| Walk-in, ER full of patients | If every slot is occupied by patients (none merely reserved), the walk-in is placed over capacity and the minute counts as overload |
+| Broken reservation choice | A walk-in breaks the firm reservation whose unit is expected latest |
+| Reservations | One firm reservation per victim (one ER slot each) |
+| Scene timing | Ambulance on-scene work starts when the unit is there and the scene is cleared; transport starts 5 minutes later |
+| Idle ambulance on scene | An ambulance on scene with no victim assigned and nobody left waiting that it can carry returns to base |
+| Report-to-care time | Hospital arrival (delivery) minus report time |
+| "Victim waiting anywhere" (idle minutes) | Any incident victim reported but not yet delivered to a hospital |
+| Utilization | `1 - real free capacity / ER slots`, with real free capacity = min(free ER slots, free doctor slots, free nurse slots) |
+| Unit bases (current data) | The OpenStreetMap station query failed (server overloaded), so `places.json` has no stations: ALS units are based at H1 to H3, and BLS, fire and rescue units at seeded random road nodes (the 3.4 fallback). Re-running `scripts/fetch_roads.py` later adds real stations and changes every scenario's bases |
+| Metrics population | Primary and secondary metrics count incident victims only; walk-ins add load |
+
 ---
 
 ## 4. Agents
@@ -401,6 +424,8 @@ A sensible rule-based system with no negotiation and no looking ahead.
 3. Choose the hospital with the shortest road travel time that has a free slot and the right capability at that moment, and reserve it.
 4. Assign the capable team with the shortest road travel time to fires and collapses.
 5. If a walk-in breaks its reservation, the unit finds out on arrival and drives to the next hospital (by road travel time) with space.
+
+Clarifications: "free" units are idle or returning to base. The hospital is chosen once the ambulance is on scene and the scene is cleared. If no capable hospital has a free slot, the unit waits and the choice is retried every minute.
 
 **It never:** holds slots, makes conditional offers or counters, requests mutual aid, swaps, transfers, releases early, lends staff, reroutes before arrival or uses the Arbiter.
 
