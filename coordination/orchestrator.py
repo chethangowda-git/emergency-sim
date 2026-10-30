@@ -72,6 +72,7 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.sent_needs: dict[str, dict[str, int]] = {}
         self.loads: dict[str, Load] = {}
         self.threads: dict[str, dict] = {}
+        self.unit_threads: dict[str, str] = {}
         self.queue: list[tuple[int, Action]] = []
         self.cooldown: dict[tuple[str, str], int] = {}
         self.pending_reserve: dict[str, dict] = {}
@@ -174,8 +175,14 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.sent_needs[iid] = report.units_needed.model_dump()
         self.decision("ia", "assess", report.decided_by, report.note or "rules", incident=iid,
                       units_needed=report.units_needed.model_dump(), flags=report.flags)
-        th = self.open_thread("unit", incident=iid)
+        th = self._unit_thread(iid)
         self.send("ia", "dispatch", "unit_request", th, incident_id=iid, proposed_action=report.model_dump())
+
+    def _unit_thread(self, iid: str) -> str:
+        """One unit-request thread per incident: the request, its updates and Dispatch's responses."""
+        if iid not in self.unit_threads:
+            self.unit_threads[iid] = self.open_thread("unit", incident=iid)
+        return self.unit_threads[iid]
 
     def _ia_updates(self) -> None:
         """Incident Assessment re-reports when victims leave the scene (incident_update), keeping the
@@ -191,7 +198,7 @@ class AgentPolicy(HospitalProtocols, Policy):
             self.sent_needs[iid] = needed
             report = rule.model_copy(update={"units_needed": rule.units_needed.model_validate(needed),
                                              "flags": first.flags, "note": first.note})
-            th = self.open_thread("unit", incident=iid)
+            th = self._unit_thread(iid)
             self.send("ia", "dispatch", "incident_update", th, incident_id=iid, proposed_action=report.model_dump())
 
     def _rejected(self, e: dict) -> None:
@@ -248,7 +255,7 @@ class AgentPolicy(HospitalProtocols, Policy):
             if not sent and self.last_response.get(iid) == body:
                 continue
             self.last_response[iid] = body
-            th = self.open_thread("unit", incident=iid)
+            th = self._unit_thread(iid)
             self.send("dispatch", "ia", "unit_response", th, incident_id=iid, proposed_action=body)
 
     def _shortfall(self, s) -> None:

@@ -8,7 +8,7 @@ A multi-agent emergency response system: a **deterministic, seeded simulator on 
 
 **`docs/DESIGN.md` is the source of truth.** Read the sections a task references before coding. If code and DESIGN.md disagree, DESIGN.md wins. If DESIGN.md is ambiguous or seems wrong, stop and ask; don't invent rules.
 
-The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 3.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
+The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 4.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
 
 ## Golden rules
 
@@ -81,7 +81,8 @@ dashboard/
   app.py               # layout, sidebar controls
   run_store.py         # list, load and save runs
   map_view.py          # pydeck layers
-  panels.py            # resources, events, KPIs
+  panels.py            # resources, events, KPIs, baseline vs agents comparison
+  agent_views.py       # agent activity and negotiation history, formatted from recorded messages
 tests/
 runs/                  # gitignored; one folder per run
 ```
@@ -224,14 +225,30 @@ Read DESIGN sections 5, 6, 7, 8, 9, 11, 12 and 3.11. The live LLM run comes last
 
 ---
 
+## Phase 4: dashboard v2
+
+Read DESIGN sections 6, 11.1 and 13. Everything reads recorded runs; no simulation logic in the dashboard.
+
+- [x] View switch under the map for agent runs: resources and events, agent activity, negotiation history.
+- [x] Agent activity (`dashboard/agent_views.py`): per agent, status at the playback minute, pending requests (in their round and unanswered), recent messages, last decision (rule, LLM or fallback); hospitals also show mood, ER use and holds.
+- [x] Negotiation history: section 11.1 negotiation totals; thread table (protocol, incident, victims, rounds, counters, declines, outcome as of the minute) with protocol and incident filters; thread detail with messages and linked decisions in order, following the latest thread by default.
+- [x] One unit-request thread per incident (request, updates and responses), so threads read as one negotiation each.
+- [x] Hospital offer reasons say what the offer does (for example "protective: decline (no free capacity now)").
+- [x] Compare with baseline: the newest greedy run of the same seed with a byte-identical scenario (or a button that runs it); two maps on one slider; KPI comparison at the minute (baseline, agents, change, better or worse); both runs' resources and events.
+- [x] Tests: activity, pending and status timing, thread summaries and outcomes, filters, baseline lookup, KPI comparison.
+
+### Phase 4 is done when
+
+- [x] All tests pass with no network.
+- [x] A recorded agent run plays back with all panels, next to the baseline (rules-only run; checked in a headless browser).
+
 ## Later phases (outline only; detailed instructions will be added when each phase starts)
 
-4. **Dashboard v2:** agent activity, negotiation history, baseline vs agents side by side.
 5. **Evaluation:** seeds, repeats, ablations, results from one button.
 
 ## Things not to do
 
-- Don't build Phase 4+ features (agent activity and negotiation panels, side-by-side comparison, evaluation) in Phase 3.
+- Don't build Phase 5 features (evaluation across seeds, repeats and ablations, results table and charts) in Phase 4.
 - Don't download map or road data at simulation time or in tests.
 - Don't use straight-line distance anywhere a travel time is needed; always use the road network.
 - Don't put simulation logic in the dashboard.

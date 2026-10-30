@@ -52,6 +52,7 @@ def test_unit_request_and_contract_net_timing():
                    units=[UnitSpec("ALS1", "ALS", "A", "A"), UnitSpec("BLS1", "BLS", "A", "A")])
     evs = run_agents(w, agents(), 20)
     assert messages(evs, "unit_request")[0]["deliver_at"] == 1
+    assert messages(evs, "unit_response")[0]["thread_id"] == messages(evs, "unit_request")[0]["thread_id"]
     assert applied(evs, "send_to_scene")[0]["t"] == 1              # one message round after the report
     assert messages(evs, "admission_cfp")[0]["t"] == 1
     assert messages(evs, "admission_offer")[0]["t"] == 2

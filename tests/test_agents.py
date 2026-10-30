@@ -187,6 +187,15 @@ def test_hospital_eager_accepts_and_declines_untreatable():
     o = HospitalAgent("H1", OFF).respond_admission(HospitalScope(w.snapshot(), "H1"), request(
         ("V1", "critical", "trauma", 60), ("V2", "serious", "burns", 120)))
     assert o.mood == "eager" and o.accept == ["V1"] and o.decline[0].victims == ["V2"] and o.decided_by == "rule"
+    assert o.reason == "eager: accept now (1 of 2 now)"
+
+
+def test_hospital_reason_says_when_it_declines_everything():
+    w = make_world([], hospitals=[hospital("H1", "C", slots=1)], walk_ins=[walk_in("W01", "H1", 0, "serious", "trauma")])
+    run_until(w, 1)
+    o = HospitalAgent("H1", OFF).respond_admission(HospitalScope(w.snapshot(), "H1"),
+                                                   request(("V1", "serious", "trauma", 90)))
+    assert o.accept == [] and o.reason == "protective: decline (no free capacity now)"
 
 
 def tight_world():
@@ -218,6 +227,7 @@ def test_hospital_protective_keeps_slots_for_criticals():
     o = HospitalAgent("H1", OFF).respond_admission(scope, request(("V1", "critical", "trauma", 60),
                                                                   ("V2", "minor", "general", 240)))
     assert o.accept == ["V1"] and o.decline[0].reason == "keeping my last slots for criticals"
+    assert o.reason == "protective: protect criticals (1 of 2 now)"
 
 
 def test_hospital_transfer_emtala_and_mood():

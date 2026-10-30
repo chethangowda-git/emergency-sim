@@ -70,3 +70,16 @@ def replayable_runs(policy: str, runs_dir: Path = RUNS_DIR) -> list[str]:
 
 def run_config(run_id: str, runs_dir: Path = RUNS_DIR) -> dict:
     return json.loads((runs_dir / run_id / "config.json").read_text())
+
+
+def baseline_for(run_id: str, runs_dir: Path = RUNS_DIR) -> str | None:
+    """The newest greedy run of the same seed on the very same scenario (byte-identical scenario.json)."""
+    d = runs_dir / run_id
+    seed, scenario = run_config(run_id, runs_dir)["seed"], (d / "scenario.json").read_bytes()
+    for other in list_runs(runs_dir):
+        o = runs_dir / other
+        cfg = run_config(other, runs_dir)
+        if (cfg.get("policy") == "greedy" and cfg.get("seed") == seed and (o / "scenario.json").exists()
+                and (o / "scenario.json").read_bytes() == scenario):
+            return other
+    return None

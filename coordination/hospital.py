@@ -33,6 +33,15 @@ def fit_now(scope: HospitalScope, victims: list[RequestedVictim], extra_slots: i
     return taken
 
 
+def offer_reason(mood: str, option_id: str, offer: AdmissionOffer) -> str:
+    """The rule's one-line reason, saying what the offer does rather than only naming the option."""
+    if not offer.accept and not offer.conditional:
+        why = offer.decline[-1].reason if offer.decline else "nothing to accept"
+        return f"{mood}: decline ({why})"
+    n = len(offer.accept) + sum(len(c.victims) for c in offer.conditional) + sum(len(d.victims) for d in offer.decline)
+    return f"{mood}: {option_id.replace('_', ' ')} ({len(offer.accept)} of {n} now)"
+
+
 class HospitalAgent:
     def __init__(self, hospital_id: str, llm: LLMClient, negotiate: bool = True) -> None:
         self.id = hospital_id
@@ -61,7 +70,7 @@ class HospitalAgent:
                    "ready_for_release": len(scope.patients("ready_for_release")),
                    "transferable": len(scope.patients("transferable"))}
         picked = pick(self.llm, self.id, "admission", prompts.HOSPITAL, payload, ids, default,
-                      f"{mood}: {default.replace('_', ' ')}")
+                      offer_reason(mood, default, options[default]))
         return options[picked.option_id].model_copy(update={"decided_by": picked.decided_by, "reason": picked.reason})
 
     def _offer(self, mood, ids, accept, reason, base_decline, conditional=(), actions=()) -> AdmissionOffer:

@@ -1,8 +1,8 @@
 # Emergency response simulator
 
-A multi-agent emergency response demo. A **deterministic, seeded simulator** runs on a **real city road network** (central Boston). A **greedy rule-based baseline** dispatches ambulances, fire and rescue teams, and hospital admissions. LLM agents that negotiate over the same resources come in later phases. Everything is run and watched from a **Streamlit dashboard**.
+A multi-agent emergency response demo. A **deterministic, seeded simulator** runs on a **real city road network** (central Boston). A **greedy rule-based baseline** dispatches ambulances, fire and rescue teams, and hospital admissions. LLM agents negotiate over the same resources, and the dashboard plays both side by side. Everything is run and watched from a **Streamlit dashboard**.
 
-The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). The current phase is **1: world, baseline and live map**.
+The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). The current phase is **4: dashboard v2**.
 
 ## Launch
 
@@ -21,7 +21,7 @@ The dashboard opens at <http://localhost:8501>. Then:
 3. **Past runs** reopens any saved run instantly.
 4. **Play / Pause** and **Speed** (1x, 5x, 20x simulated minutes per second) are in the sidebar. The **Minute** slider above the map jumps to any minute.
 
-The map shows ambulances (ALS red, BLS blue), fire teams (orange) and rescue teams (brown) driving along real streets, with their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use. The panels below (units, hospitals, live events, KPIs) follow the playback minute.
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) driving along real streets, with their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use. The panels below (units, hospitals, live events, KPIs) follow the playback minute.
 
 ## The area
 
@@ -60,6 +60,16 @@ Choose **agents** in the Policy menu to run the multi-agent system. Agents talk 
 Three comparison variants switch parts of the system off: **no negotiation**, **no Arbiter** and **rule hospitals**.
 
 For agents, the sidebar also has an **LLM** choice: rules only (no key needed), live (needs the model and key described above; every call is recorded), or replay of a recorded run (exact, no key). Run folders for agents also contain `messages.jsonl` and `llm_calls.jsonl`. In the Live events feed, the **Agent messages** toggle shows the messages and each agent's decisions.
+
+## Dashboard v2 (Phase 4)
+
+For an agent run, the bar under the map switches between three views, all synced with the playback minute:
+
+- **Resources & events:** units, hospitals and the live events feed.
+- **Agent activity:** a card per agent (Incident Assessment, Dispatch, each hospital, the Arbiter). Each card shows the agent's status, its pending requests, its recent messages and its last decision, marked as made by a rule, the LLM or the fallback rule. Hospital cards also show mood, ER use and holds.
+- **Negotiation history:** totals for threads, rounds, counters, deals without the Arbiter, escalations and Arbiter decisions. Below them is a table of every negotiation thread so far, with protocol, incident, victims, rounds, counters, declines and where it stands. You can filter by protocol and incident. Pick a thread, or let the view follow the latest one, to read its messages and the decisions behind them in order.
+
+**Compare with baseline** (sidebar, for agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run. You get two maps on one time slider, a baseline vs agents table of the KPIs at that minute, and both runs' resources and events. If no baseline run exists yet, a button runs it (it takes about a second).
 
 ## For developers
 

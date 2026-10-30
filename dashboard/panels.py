@@ -132,3 +132,32 @@ def per_hospital_kpis(m: dict) -> pd.DataFrame:
              "Idle min": m["idle_minutes"].get(hid, 0), "Overload min": m["overload_minutes"].get(hid, 0)}
             for hid in sorted(m["er_peak_pct"])]
     return pd.DataFrame(rows).set_index("Hospital") if rows else pd.DataFrame()
+
+
+COMPARE = (  # label, metric key, +1 when higher is better, -1 when lower is better, 0 when neither
+    ("Criticals on time", "critical_on_time_pct", 1, "%"),
+    ("Unserved criticals", "unserved_criticals", -1, ""),
+    ("Avg report → care", "avg_report_to_care_min", -1, " min"),
+    ("Avg response time", "avg_response_time_min", -1, " min"),
+    ("ER load balance", "er_load_balance_pct", -1, " pts"),
+    ("Victims delivered", "victims_delivered", 1, ""),
+    ("Deadlines missed", "deadlines_missed", -1, ""),
+    ("Rejected actions", "rejected_actions", -1, ""),
+)
+
+
+def verdict(base, agents, better: int) -> str:
+    if base is None or agents is None or base == agents or better == 0:
+        return ""
+    return "✅ better" if (agents - base) * better > 0 else "🔻 worse"
+
+
+def kpi_comparison(base: dict, agents: dict) -> pd.DataFrame:
+    """Baseline vs agents on the same seed at the same minute (DESIGN 13.1, compare with baseline)."""
+    rows = []
+    for name, key, better, suffix in COMPARE:
+        b, a = base.get(key), agents.get(key)
+        change = "" if b is None or a is None else f"{a - b:+.4g}{' pts' if suffix == '%' else suffix}"
+        rows.append({"Metric": name, "Baseline": fmt(b, suffix), "Agents": fmt(a, suffix), "Change": change,
+                     "": verdict(b, a, better)})
+    return pd.DataFrame(rows).set_index("Metric")
