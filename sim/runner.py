@@ -61,9 +61,12 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 def run(seed: int, policy: str | Policy = "greedy", progress_cb: ProgressCb | None = None, *,
         runs_dir: Path = RUNS_DIR, cfg: SimConfig | None = None, roads: RoadNetwork | None = None,
         places: dict | None = None, llm_mode: str | None = None, replay_from: Path | None = None,
-        llm: LLMClient | None = None) -> Path:
+        llm: LLMClient | None = None, light: bool = False, run_id: str | None = None) -> Path:
     """Simulate one seed and save the run folder. Agent policies take an LLM mode: `off` (rules only),
-    `live` (records every call) or `replay` from an earlier run folder."""
+    `live` (records every call) or `replay` from an earlier run folder.
+
+    A light run (evaluation) keeps only config, scenario, metrics and LLM calls; the full
+    folder can be rebuilt exactly from them (rules are deterministic, LLM calls replay)."""
     cfg = cfg or default_config()
     roads = roads or load_roads(cfg)
     places = places or load_places()
@@ -75,7 +78,7 @@ def run(seed: int, policy: str | Policy = "greedy", progress_cb: ProgressCb | No
     simulate(world, pol, progress_cb)
 
     runs_dir.mkdir(parents=True, exist_ok=True)
-    run_id = next_run_id(runs_dir, seed, pol.name)
+    run_id = run_id or next_run_id(runs_dir, seed, pol.name)
     out = runs_dir / run_id
     out.mkdir()
     victims = incident_victims(world)
@@ -84,12 +87,15 @@ def run(seed: int, policy: str | Policy = "greedy", progress_cb: ProgressCb | No
     write_json(out / "config.json", {"run_id": run_id, "seed": seed, "policy": pol.name,
                                      "area": load_area()["name"], "llm": llm_info, "sim": cfg.to_dict()})
     write_json(out / "scenario.json", scenario.to_dict())
+    write_json(out / "metrics.json", metrics.compute(victims, world.timeline, world.events))
+    if llm is not None:
+        llm.save(out / "llm_calls.jsonl")
+    if light:
+        return out
     write_jsonl(out / "events.jsonl", world.events)
     write_json(out / "routes.json", [t.to_dict() for t in world.trips])
     write_jsonl(out / "timeline.jsonl", world.timeline)
-    write_json(out / "metrics.json", metrics.compute(victims, world.timeline, world.events))
     write_json(out / "victims.json", victims)
     if hasattr(pol, "bus"):
         write_jsonl(out / "messages.jsonl", [m.model_dump() for m in pol.bus.sent])
-        llm.save(out / "llm_calls.jsonl")
     return out

@@ -194,6 +194,8 @@ The simulator emits events into a JSONL log, including: `incident_reported`, `sc
 | Arbiter least-bad with no slot yet | Binding: the unit goes to the first capable hospital that has room, closest first, and the Arbiter may release a ready-for-release patient to make room; no renegotiation |
 | Unit-request threads | One thread per incident holds its unit request, Incident Assessment's updates and Dispatch's responses |
 | Same-minute capacity | A hospital declines an award ("capacity taken since my offer") if reservations already placed this minute leave too few slots |
+| Evaluation repeats | The baseline and rules-only agents are deterministic, so they run once per seed; the 3 repeats apply to live LLM runs |
+| Evaluation statistics | Repeats are averaged per seed first; spread is the standard deviation across seeds (and, live, the average across a seed's repeats); improvement uses the means; a win means strictly higher criticals on time, ties are reported apart; a seed with no criticals is left out of that metric |
 | Metrics population | Primary and secondary metrics count incident victims only; walk-ins add load |
 
 ---

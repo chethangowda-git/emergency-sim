@@ -8,7 +8,7 @@ A multi-agent emergency response system: a **deterministic, seeded simulator on 
 
 **`docs/DESIGN.md` is the source of truth.** Read the sections a task references before coding. If code and DESIGN.md disagree, DESIGN.md wins. If DESIGN.md is ambiguous or seems wrong, stop and ask; don't invent rules.
 
-The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 4.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
+The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 phases (DESIGN section 17). **Current phase: 5.** Area: central Boston (agreed; see DESIGN 3.11). Don't build anything from later phases.
 
 ## Golden rules
 
@@ -32,6 +32,7 @@ The user double-clicks `launch.command` (macOS), `launch.bat` (Windows) or runs 
 pytest -q                                    # all tests, no network
 python scripts/fetch_roads.py                # one-time road download (needs network)
 python -m cli run --policy greedy --seed 42  # headless run, used by tests and debugging
+python -m cli eval --seeds 1-20              # headless evaluation (DESIGN 11.2) under runs/evals/
 streamlit run dashboard/app.py               # the dashboard
 ```
 
@@ -76,6 +77,9 @@ coordination/          # Phase 2 agents (never name a package `agents`)
   protocols.py         # holds, transfers, staff lending, mutual aid, swap
 policies/registry.py   # policy names (greedy, agents and ablations) and LLM client setup
 config/llm.json        # LLM mode and pinned model (unset until the first live run)
+evaluation/
+  runner.py            # seeds x policies x repeats as light runs, results.jsonl, summary.json, rebuild for playback
+  summary.py           # DESIGN 11.2: mean and spread, improvement over the baseline, win rate, the claim
 cli.py
 dashboard/
   app.py               # layout, sidebar controls
@@ -83,8 +87,10 @@ dashboard/
   map_view.py          # pydeck layers
   panels.py            # resources, events, KPIs, baseline vs agents comparison
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
+  evaluation_page.py   # the Evaluation page: settings, Run evaluation, results, open a seed in playback
+  eval_views.py        # evaluation tables and Plotly charts
 tests/
-runs/                  # gitignored; one folder per run
+runs/                  # gitignored; one folder per run; evaluations in runs/evals/<eval-id>/
 ```
 
 ## Coding conventions
@@ -242,13 +248,26 @@ Read DESIGN sections 6, 11.1 and 13. Everything reads recorded runs; no simulati
 - [x] All tests pass with no network.
 - [x] A recorded agent run plays back with all panels, next to the baseline (rules-only run; checked in a headless browser).
 
-## Later phases (outline only; detailed instructions will be added when each phase starts)
+## Phase 5: evaluation
 
-5. **Evaluation:** seeds, repeats, ablations, results from one button.
+Read DESIGN sections 1, 11 and 12. The evaluation seeds are 1 to 20; don't tune agents on them.
+
+- [x] Light runs (`run(..., light=True)`): config, scenario, metrics and LLM calls only; `evaluation.runner.rebuild_run` re-creates the full folder exactly (re-simulated, or replayed for LLM runs) for playback.
+- [x] `evaluation/runner.py`: seeds x policies (the baseline always, plus the chosen agent variants) x repeats; each seed's policies must run byte-identical scenarios; `results.jsonl` (one row per run) and `summary.json` (written last) under `runs/evals/<eval-id>/`. LLM modes: rules only (each seed once, deterministic), live (repeats, default 3), replay of a recorded evaluation.
+- [x] `evaluation/summary.py` (DESIGN 11.2): repeats averaged per seed; mean and standard deviation across seeds, plus spread across repeats; improvement (agents - baseline) / baseline on the means; wins, ties and losses on the primary metric; the section 1 claim sentence.
+- [x] `cli.py eval --seeds 1-20 --policies ... --llm off|live|replay --repeats N --from <eval-id>`.
+- [x] Dashboard Evaluation page: settings, run count and LLM call estimate, **Run evaluation** with progress, past evaluations; the claim, a KPI row, criticals on time by policy (bars with ±1 sd), wins table, any variant against the baseline (every metric, per-seed dumbbell chart), all-policy table, per-seed table, open any evaluated run in playback.
+- [x] Tests: summary maths, settings, evaluation files and determinism, recorded evaluation replays exactly, rebuilt runs match their evaluated metrics, tables and charts.
+
+### Phase 5 is done when
+
+- [x] All tests pass with no network.
+- [x] One click produces the final comparison (rules only; checked in a headless browser: 100 runs in about 30 seconds).
+- [ ] A live evaluation (agents 3 times per seed, DESIGN 11.2) and its replay (needs the user's model and key, like the Phase 3 live run).
 
 ## Things not to do
 
-- Don't build Phase 5 features (evaluation across seeds, repeats and ablations, results table and charts) in Phase 4.
+- Don't tune agent rules on the evaluation seeds 1 to 20; use other seeds for debugging.
 - Don't download map or road data at simulation time or in tests.
 - Don't use straight-line distance anywhere a travel time is needed; always use the road network.
 - Don't put simulation logic in the dashboard.

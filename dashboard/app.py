@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from dashboard import agent_views, map_view, panels, run_store  # noqa: E402
+from dashboard import agent_views, evaluation_page, map_view, panels, run_store  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
 from coordination.llm import load_llm_config  # noqa: E402
@@ -343,7 +343,7 @@ def negotiation_history(run_id: str, minute: int) -> None:
     st.dataframe(detail, width="stretch", hide_index=True)
 
 
-def main() -> None:
+def playback() -> None:
     init_state()
     st.session_state.setdefault("speed", "5x")
     sidebar()
@@ -359,4 +359,9 @@ def main() -> None:
     fragment(run_id, st.session_state.get("baseline_id"))
 
 
-main()
+def evaluation() -> None:
+    evaluation_page.render(roads(), PLAYBACK)
+
+
+PLAYBACK = st.Page(playback, title="Playback", icon="🗺️", default=True)
+st.navigation([PLAYBACK, st.Page(evaluation, title="Evaluation", icon="📊", url_path="evaluation")]).run()

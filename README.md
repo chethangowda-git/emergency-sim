@@ -2,7 +2,7 @@
 
 A multi-agent emergency response demo. A **deterministic, seeded simulator** runs on a **real city road network** (central Boston). A **greedy rule-based baseline** dispatches ambulances, fire and rescue teams, and hospital admissions. LLM agents negotiate over the same resources, and the dashboard plays both side by side. Everything is run and watched from a **Streamlit dashboard**.
 
-The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). The current phase is **4: dashboard v2**.
+The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). The current phase is **5: evaluation**.
 
 ## Launch
 
@@ -71,11 +71,26 @@ For an agent run, the bar under the map switches between three views, all synced
 
 **Compare with baseline** (sidebar, for agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run. You get two maps on one time slider, a baseline vs agents table of the KPIs at that minute, and both runs' resources and events. If no baseline run exists yet, a button runs it (it takes about a second).
 
+## Evaluation (Phase 5)
+
+Open the **Evaluation** page (top of the sidebar) and press **Run evaluation**. It runs seeds 1 to 20 with the greedy baseline, the agents and the three ablations (DESIGN 11.2 and 11.3). With rules only, that's 100 runs in about half a minute. The page shows:
+
+- the headline result as one sentence, and the main numbers against the baseline;
+- criticals on time for each policy (mean over seeds, with the spread across seeds);
+- wins, ties and losses per seed against the baseline;
+- any variant against the baseline on every metric, with a per-seed chart;
+- **Open in playback** for any seed and policy of the evaluation.
+
+Rules-only runs are deterministic, so each seed runs once. With a live LLM, the agents run 3 times per seed. Every call is recorded, and **Replay a recorded evaluation** reproduces it exactly without a key. Evaluations are saved in `runs/evals/<eval-id>/`. Each one holds `results.jsonl` (one row per run), `summary.json`, and a small folder per run (config, scenario, metrics, LLM calls) that is enough to rebuild the full run.
+
+Current result, rules only, seeds 1 to 20: the agents get **70.8%** of critical victims to care on time against **38.3%** for the greedy baseline, winning on 18 of 20 seeds (1 tie, 1 loss).
+
 ## For developers
 
 ```bash
 pytest -q                                    # all tests, no network
 python -m cli run --policy greedy --seed 42  # headless run (also: --policy agents --llm off)
+python -m cli eval --seeds 1-20              # headless evaluation under runs/evals/
 python scripts/fetch_roads.py                # one-time road download (needs network)
 streamlit run dashboard/app.py               # the dashboard
 ```
