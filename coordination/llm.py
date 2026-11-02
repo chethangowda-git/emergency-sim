@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 from sim.config import ROOT
 
 LLM_CONFIG = ROOT / "config" / "llm.json"
+ENV_FILE = ROOT / ".env"
 MODES = ("off", "fake", "replay", "live")
 
 FakeFn = Callable[[str, str, dict], Any]
@@ -41,7 +42,21 @@ def call_key(agent: str, purpose: str, payload: dict) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
+def load_env_file(path: Path = ENV_FILE) -> None:
+    """KEY=VALUE lines from the gitignored .env (OPENAI_API_KEY for live runs started from the
+    launcher); variables already set in the environment win."""
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip().removeprefix("export ").strip(), value.strip().strip("\"'"))
+
+
 def load_llm_config(path: Path = LLM_CONFIG) -> dict:
+    load_env_file()
     return json.loads(path.read_text()) if path.exists() else {"mode": "off", "model": None, "temperature": 0}
 
 
@@ -53,7 +68,8 @@ def _sdk_runner(agent, text: str):
 
 class LLMClient:
     def __init__(self, mode: str = "off", model: str | None = None, *, fake: FakeFn | None = None,
-                 replay_path: Path | None = None, runner: Runner | None = None, temperature: float = 0.0) -> None:
+                 replay_path: Path | None = None, runner: Runner | None = None,
+                 temperature: float | None = 0.0) -> None:
         if mode not in MODES:
             raise ValueError(f"unknown LLM mode {mode!r}")
         if mode == "fake" and fake is None:
@@ -114,12 +130,13 @@ class LLMClient:
     def _live(self, agent, instructions, payload, schema, tools) -> tuple[Any, str | None]:
         from agents import Agent, ModelSettings
 
+        settings = ModelSettings() if self.temperature is None else ModelSettings(temperature=self.temperature)
         sdk_agent = Agent(name=agent, instructions=instructions, model=self.model, tools=tools,
-                          model_settings=ModelSettings(temperature=self.temperature), output_type=schema)
+                          model_settings=settings, output_type=schema)
         try:
             result = self._runner(sdk_agent, json.dumps(payload, sort_keys=True))
         except Exception as exc:  # network, quota or model errors all become a logged fallback
-            return None, f"llm_error: {type(exc).__name__}"
+            return None, f"llm_error: {type(exc).__name__}: {str(exc)[:300]}"
         out = result.final_output
         return (out.model_dump() if isinstance(out, BaseModel) else out), None
 

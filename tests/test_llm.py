@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from coordination.llm import LLMClient, call_key
+from coordination.llm import LLMClient, call_key, load_env_file
 from coordination.schemas import Choice, IAJudgment
 from coordination.tools import DispatchScope, HospitalScope, function_tools
 from tests.helpers import make_world
@@ -68,7 +68,29 @@ def test_live_errors_become_fallbacks():
     def runner(agent, text):
         raise TimeoutError("slow")
 
-    assert ask(LLMClient("live", model="m", runner=runner)).error == "llm_error: TimeoutError"
+    assert ask(LLMClient("live", model="m", runner=runner)).error == "llm_error: TimeoutError: slow"
+
+
+def test_live_mode_without_temperature_for_models_that_reject_it():
+    seen = {}
+
+    def runner(agent, text):
+        seen["settings"] = agent.model_settings
+        return SimpleNamespace(final_output=Choice(option_id="b", reason="fine"))
+
+    ask(LLMClient("live", model="m", runner=runner, temperature=None))
+    assert seen["settings"].temperature is None
+
+
+def test_env_file_supplies_the_key_but_the_environment_wins(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text('# comment\nexport OPENAI_API_KEY="sk-test"\nOTHER = two\nnot a pair\n')
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OTHER", "already set")
+    load_env_file(env)
+    import os
+    assert os.environ["OPENAI_API_KEY"] == "sk-test" and os.environ["OTHER"] == "already set"
+    load_env_file(tmp_path / "missing.env")
 
 
 def test_live_mode_requires_model_and_key(monkeypatch):

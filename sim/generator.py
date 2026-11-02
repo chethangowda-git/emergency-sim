@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 
 from sim.config import SimConfig
 from sim.models import Hospital, Incident, Scenario, Staff, UnitSpec, Vehicle, Victim, WalkIn
@@ -22,6 +23,8 @@ SURGE_DESCRIPTIONS = {
     "bus_fire": "school bus on fire, heavy smoke, many passengers",
     "traffic_accident": "multi-vehicle pileup at rush hour",
 }
+SPAWN_TYPES = (*DESCRIPTIONS, "bus_fire")
+SPAWN_MAX_VICTIMS = 10
 
 
 def generate(seed: int, cfg: SimConfig, roads: RoadNetwork, places: dict) -> Scenario:
@@ -128,3 +131,31 @@ def bases(rng: random.Random, kind: str, count: int, pool: list[dict], nodes: li
     for i in range(len(out) + 1, count + 1):
         out.append(UnitSpec(f"{kind}{i}", kind, "street", rng.choice(nodes)))
     return out
+
+
+# ----- incidents placed by the user during a live run (DESIGN 3.3) -----
+
+def spawn_id(k: int) -> str:
+    return f"S{k:02d}"
+
+
+def spawn_spec(seed: int, cfg: SimConfig, k: int, t: int, node: str, kind: str | None = None,
+               n_victims: int | None = None) -> dict:
+    """The k-th placed incident. Whatever the user left open (type, victim count) and the severities come
+    from the seed's own spawn stream, so the spec is reproducible; it is saved with the run."""
+    rng = random.Random(f"{seed}:spawn:{k}")
+    kind = kind or weighted(rng, cfg.incident_type_weights)
+    n = n_victims or rng.randint(*cfg.normal_victims)
+    text = SURGE_DESCRIPTIONS["bus_fire"] if kind == "bus_fire" else rng.choice(DESCRIPTIONS[kind])
+    return raw_incident(rng, cfg, t, kind, n, text, n >= cfg.surge_victims[0], node)
+
+
+def spawned(cfg: SimConfig, roads: RoadNetwork, spawns: list[dict]) -> list[tuple[Incident, list[Victim]]]:
+    return [materialize(cfg, roads, spawn_id(k), raw) for k, raw in enumerate(spawns, start=1)]
+
+
+def with_spawns(scenario: Scenario, cfg: SimConfig, roads: RoadNetwork, spawns: list[dict]) -> Scenario:
+    """The scenario plus the placed incidents, each reported at its own minute like any other."""
+    made = spawned(cfg, roads, spawns)
+    return replace(scenario, incidents=scenario.incidents + [inc for inc, _ in made],
+                   victims=scenario.victims + [v for _, vs in made for v in vs])

@@ -52,12 +52,16 @@ You only need Python 3.11 or newer installed. The first launch creates a virtual
 
 The dashboard opens at <http://localhost:8501>. Then:
 
-1. Pick a **seed** (42 is the reference scenario) and press **Run simulation**. A progress bar shows the 360 simulated minutes, then playback starts.
-2. **New scenario** runs a random seed.
-3. **Past runs** reopens any saved run instantly.
-4. **Play / Pause** and **Speed** (1x, 5x, 20x simulated minutes per second) are in the sidebar. The **Minute** slider above the map jumps to any minute.
+1. Pick a **seed** (42 is the reference scenario), the number of **incidents** (4 by default; one is always the surge) and the **policy** (greedy baseline or agents), then press **Run simulation**. The run happens live: the simulation advances while you watch, and it is saved when it reaches minute 359.
+2. **⏸ Pause / ▶ Resume** stops and restarts the simulation itself, so you can read the resources, events and agent messages at that minute. **⏭ Step 1 min** advances one minute and stays paused.
+3. **Speed:** 1x plays the whole 360-minute run in about 50 seconds; 0.5x, 2x and 4x are slower or faster. Speed and pauses never change the outcome.
+4. **🚨 Spawn incident** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
+5. **🎲 Restart with new seed** picks a random seed and waits at minute 0; press Resume to start.
+6. **Past runs** reopens a saved run and replays it from minute 0 with the same clock controls.
 
-The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) driving along real streets, with their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use. The panels below (units, hospitals, live events, KPIs) follow the playback minute.
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) driving along real streets, with their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use and **Walk-in patients (N)**, the people in the ER who came in on their own. The panels below (units, hospitals, live events, KPIs) follow the clock.
+
+With live LLM calls, a minute lasts as long as the agents take to answer: the clock shows "agents deciding" meanwhile, and a whole run takes about 4 to 5 minutes whatever the speed.
 
 ## The area
 
@@ -99,13 +103,13 @@ For agents, the sidebar also has an **LLM** choice: rules only (no key needed), 
 
 ## Dashboard v2 (Phase 4)
 
-For an agent run, the bar under the map switches between three views, all synced with the playback minute:
+For an agent run, the bar under the map switches between three views, all synced with the clock:
 
 - **Resources & events:** units, hospitals and the live events feed.
 - **Agent activity:** a card per agent (Incident Assessment, Dispatch, each hospital, the Arbiter). Each card shows the agent's status, its pending requests, its recent messages and its last decision, marked as made by a rule, the LLM or the fallback rule. Hospital cards also show mood, ER use and holds.
 - **Negotiation history:** totals for threads, rounds, counters, deals without the Arbiter, escalations and Arbiter decisions. Below them is a table of every negotiation thread so far, with protocol, incident, victims, rounds, counters, declines and where it stands. You can filter by protocol and incident. Pick a thread, or let the view follow the latest one, to read its messages and the decisions behind them in order.
 
-**Compare with baseline** (sidebar, for agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run. You get two maps on one time slider, a baseline vs agents table of the KPIs at that minute, and both runs' resources and events. If no baseline run exists yet, a button runs it (it takes about a second).
+**Compare with baseline** (sidebar, for agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run once it is saved. You get two maps on one clock, a baseline vs agents table of the KPIs at that minute, and both runs' resources and events. If no baseline run exists yet, a button runs it (it takes about a second), with the same placed incidents.
 
 ## Evaluation (Phase 5)
 
@@ -115,7 +119,7 @@ Open the **Evaluation** page (top of the sidebar) and press **Run evaluation**. 
 - criticals on time for each policy (mean over seeds, with the spread across seeds);
 - wins, ties and losses per seed against the baseline;
 - any variant against the baseline on every metric, with a per-seed chart;
-- **Open in playback** for any seed and policy of the evaluation.
+- **Open in playback** for any seed and policy of the evaluation (the ablations are only reachable from here).
 
 Rules-only runs are deterministic, so each seed runs once. With a live LLM, the agents run 3 times per seed. Every call is recorded, and **Replay a recorded evaluation** reproduces it exactly without a key. Evaluations are saved in `runs/evals/<eval-id>/`. Each one holds `results.jsonl` (one row per run), `summary.json`, and a small folder per run (config, scenario, metrics, LLM calls) that is enough to rebuild the full run.
 

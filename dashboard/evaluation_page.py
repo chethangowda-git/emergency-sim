@@ -88,7 +88,7 @@ def results(eval_id: str, playback_page) -> None:
         st.success(sentence)
     variants = list(summary["versus_baseline"])
     if not variants:
-        st.info("Only the baseline ran in this evaluation.")
+        baseline_only(data, playback_page)
         return
     focus = "agents" if "agents" in variants else variants[0]
     headline(summary, focus)
@@ -112,6 +112,29 @@ def results(eval_id: str, playback_page) -> None:
         st.dataframe(eval_views.policy_table(summary), width="stretch")
     with st.expander("Criticals on time per seed (table)"):
         st.dataframe(eval_views.per_seed_table(summary), width="stretch")
+    open_in_playback(data, playback_page)
+
+
+def baseline_only(data: dict, playback_page) -> None:
+    """An evaluation of the baseline alone: its numbers per seed, ready for agents to be compared against."""
+    summary = data["summary"]
+    base = summary["baseline"]
+    m = summary["metrics"][base]
+    st.caption("Only the greedy baseline ran in this evaluation; add agent variants to compare against it.")
+    cols = st.columns(4)
+    for col, (name, key, suffix) in zip(cols, (("Criticals on time", PRIMARY, "%"),
+                                               ("Avg report → care", "avg_report_to_care_min", " min"),
+                                               ("Deadlines missed", "deadlines_missed", ""),
+                                               ("Victims delivered", "victims_delivered", ""))):
+        col.metric(f"{name} (mean)", f"{m[key]['mean']}{suffix}",
+                   delta=f"range {m[key]['min']}–{m[key]['max']}{suffix}", delta_color="off", delta_arrow="off")
+    left, right = st.columns([3, 2])
+    with left:
+        st.markdown("##### Criticals on time per seed")
+        st.plotly_chart(eval_views.per_seed_bars(summary, base, theme()), theme=None, width="stretch")
+    with right:
+        st.markdown("##### Every metric (mean ± sd across seeds)")
+        st.dataframe(eval_views.policy_table(summary), width="stretch", height=670)
     open_in_playback(data, playback_page)
 
 
@@ -149,7 +172,10 @@ def open_in_playback(data: dict, playback_page) -> None:
     if c4.button("Open in playback", width="stretch"):
         with st.spinner("Rebuilding the run ..."):
             out = ev.rebuild_run(data["eval_id"], int(seed), policy, int(repeat))
-        st.session_state.update(run_id=out.name, play_t=0.0, minute_slider=0, playing=False)
+        live = st.session_state.get("live")
+        if live is not None and not live.done:
+            live.stop()
+        st.session_state.update(live=None, spawn_mode=False, run_id=out.name, play_t=0.0, playing=False)
         st.switch_page(playback_page)
 
 

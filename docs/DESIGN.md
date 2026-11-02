@@ -69,6 +69,8 @@ Care needs are `trauma`, `burns` or `general`. Minor victims always need `genera
 
 One incident per scenario is a large surge event (multi-vehicle pileup or bus fire, 6 to 10 victims).
 
+**Placed incidents (live runs, section 13.3).** During a live run the user may pause and place an extra incident on a road node by clicking the map. It gets id `S01`, `S02`, ... and is reported at the next minute, like any other incident. The user may choose its type (including bus fire) and victim count (1 to 10); whatever is left open, the description and the severities are drawn from the seed's own spawn stream (`Random("<seed>:spawn:<k>")`), never from the scenario's random stream, so the generated scenario is unchanged. The placed incidents are saved with the run (`config.json` `spawns`, and in `scenario.json`), so the run can be replayed or re-simulated exactly, and the baseline can be run against the same incidents.
+
 ### 3.4 Dispatch-controlled units (public fleet)
 
 | Unit | Crew | Can carry |
@@ -491,6 +493,7 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 3. Every agent output must validate against a Pydantic schema. If it does not, a fallback rule decides, and the fallback is logged.
 4. Rules compute all numbers; the LLM only makes judgments.
 5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Expected scale: roughly 60 to 150 LLM calls per run.
+6. A live run's speed, pauses and one-minute steps never change its outcome: pacing only adds waiting between minutes. A finished live run saves exactly the files a headless run of the same seed, policy and placed incidents saves.
 
 ---
 
@@ -504,26 +507,37 @@ The dashboard is the only way the user runs anything: no command line needed. A 
 |---|---|---|
 | Seed | 1 | Picks the scenario |
 | Policy | 1 (greedy), 2+ (agents) | Which decision-maker to run |
-| Run simulation | 1 | Runs with a progress bar, saves the run, loads it onto the map |
-| New scenario | 1 | Random seed, then runs it |
-| Past runs | 1 | Reopens any saved run instantly |
-| Play / pause, speed (1x, 5x, 20x), time slider | 1 | Playback |
-| Live or replay | 3 | Agents: call the LLM (recorded) or replay a recorded run |
-| Compare with baseline | 4 | Baseline and agents side by side on the same seed |
+| Incidents per scenario | 4 | 3, 4, 6 or 12 (default 4 for watching; the evaluation always uses 12); one is always the surge |
+| Run simulation | 1, live in 5 | Starts a live run (section 13.3) of the seed from minute 0; saved when it reaches the last minute |
+| Restart with new seed | 1, live in 5 | Picks a random seed, writes it into the Seed box, and waits paused at minute 0 |
+| Past runs | 1 | Reopens a saved run, replayed from minute 0 with the same clock controls (greedy and agents runs; ablation runs open from the Evaluation page) |
+| Pause / Resume, Step 1 minute, speed (0.5x, 1x, 2x, 4x) | 1, live in 5 | The clock: 1x plays the 360 minutes in about 50 seconds; Step advances one minute and stays paused. No time slider |
+| Spawn incident | 5 | Live runs only: pauses, shows clickable street intersections, places an incident (section 3.3), resumes |
+| Live or replay | 3 | Agents: rules only, call the LLM (recorded) or replay a recorded run |
+| Compare with baseline | 4 | Baseline and agents side by side on the same seed and placed incidents (saved agent runs) |
 | Run evaluation | 5 | Seeds, repeats and ablations; shows the results table and charts |
 
 ### 13.2 Panels
 
 | Panel | Phase | Contents |
 |---|---|---|
-| Map | 1 | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without) sized by victims; units move smoothly along streets (ALS, BLS, teams, hospital vehicles in distinct styles) with their remaining route dashed; hospitals as markers showing ER use |
+| Map | 1 | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without) sized by victims; units move smoothly along streets (ALS, BLS, teams, hospital vehicles in distinct styles) with their remaining route dashed; hospitals as markers showing ER use and "Walk-in patients (N)", the walk-ins in the ER at that minute |
 | Resources | 1 | Units free and busy by type; per hospital: ER, ward, doctors, nurses (and holds and mood from Phase 2) |
 | Live events | 1 | Scrolling feed of events at the current minute |
-| KPIs | 1 | Metrics from section 11, updating with playback |
+| KPIs | 1 | Metrics from section 11, updating with the clock |
 | Agent activity | 4 | Each agent's status, recent messages, pending requests, last decision (rule or LLM) |
 | Negotiation history | 4 | Threads with rounds, offers, counters, awards, declines with reasons, Arbiter decisions |
 
-All panels read the same recorded run and stay in sync with the playback minute. Replay never needs an API key.
+All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
+
+### 13.3 Live runs
+
+A run happens while it is watched. A background worker (`sim/live.py`) steps the world one minute at a time, paced to the chosen speed, and publishes each minute; the dashboard draws the newest one. Its only inputs are pause, resume, one-minute steps, speed and placed incidents (section 3.3).
+
+- Pause stops the simulation itself; every panel holds at that minute. With live LLM calls, a pause takes effect once the current minute's calls finish ("pausing after this minute"), and while a minute waits on the model the clock shows "agents deciding".
+- Rules-only runs keep up with any speed; live LLM runs advance as fast as the model answers.
+- When the run reaches its last minute it is saved like any other run and stays on screen as a saved run. Leaving a live run before the end (another run, a new seed) abandons it unsaved.
+- The baseline and the agents use the same live runner.
 
 ## 14. Worked examples
 

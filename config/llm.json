@@ -1,6 +1,6 @@
 {
   "mode": "off",
-  "model": null,
+  "model": "gpt-4o-mini-2024-07-18",
   "temperature": 0,
-  "note": "Set model to a pinned OpenAI model ID before the first live run (Phase 3). Phase 2 never calls the API."
+  "note": "Pinned snapshot for live runs (chosen for cost: about $0.02 per run). mode is the default when none is chosen; the dashboard and CLI pick off, live or replay per run. The key comes from OPENAI_API_KEY or the gitignored .env."
 }

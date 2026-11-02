@@ -174,6 +174,12 @@ def test_baseline_for_needs_the_same_seed_and_scenario(tmp_path):
     assert run_store.baseline_for(agents, tmp_path) == base
 
 
+def test_incident_count_is_read_from_the_run(tmp_path):
+    small = run(5, "greedy", runs_dir=tmp_path, cfg=SMALL.__class__(**{**SMALL.__dict__, "n_incidents": 3}),
+                roads=roads(), places=PLACES).name
+    assert run_store.incidents_of(small, tmp_path) == 3
+
+
 def test_kpi_comparison_marks_better_and_worse():
     base = {"critical_on_time_pct": 40.0, "avg_report_to_care_min": 80.0, "rejected_actions": 0,
             "unserved_criticals": 2}
@@ -183,3 +189,32 @@ def test_kpi_comparison_marks_better_and_worse():
     assert table.loc["Criticals on time"].tolist() == ["40.0%", "60.0%", "+20 pts", "✅ better"]
     assert table.loc["Avg report → care"].tolist() == ["80.0 min", "90.0 min", "+10 min", "🔻 worse"]
     assert table.loc["Rejected actions", ""] == "" and table.loc["Unserved criticals", "Change"] == ""
+
+
+def test_past_runs_can_be_limited_to_policies(tmp_path):
+    run(5, "greedy", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES)
+    run(5, "agents-noarb", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
+    assert run_store.list_runs(tmp_path, policies=("greedy", "agents")) == ["seed5-greedy-001"]
+    assert len(run_store.list_runs(tmp_path)) == 2
+
+
+def test_baseline_with_the_same_placed_incidents_matches(tmp_path):
+    spawns = [{"t": 9, "type": "medical_emergency", "severities": ["critical"], "description": "x",
+               "surge": False, "node": "D"}]
+    agents = run(5, "agents", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off",
+                 spawns=spawns).name
+    assert run_store.spawns_of(agents, tmp_path) == spawns
+    run(5, "greedy", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES)
+    assert run_store.baseline_for(agents, tmp_path) is None
+    base = run(5, "greedy", runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, spawns=spawns).name
+    assert run_store.baseline_for(agents, tmp_path) == base
+
+
+def test_hospitals_show_walk_ins_now_in_the_er():
+    from dashboard import map_view
+    h = {"id": "H1", "name": "North", "lat": 42.0, "lon": -71.0, "er_used": 3, "er_slots": 4, "reserved": 0,
+         "waiting_for_staff": 0, "ward_used": 0, "ward_beds": 6, "boarding": 0,
+         "patients": [{"walk_in": True}, {"walk_in": False}, {"walk_in": True}]}
+    row = map_view.hospital_rows({"hospitals": [h]})[0]
+    assert row["walk_ins"] == "Walk-in patients (2)" and "2 walk-in patients in the ER" in row["label"]
+    assert map_view.walk_ins_in_er({**h, "patients": []}) == 0

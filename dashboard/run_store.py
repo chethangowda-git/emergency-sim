@@ -1,4 +1,5 @@
-"""List, load and save runs. The dashboard only reads run folders (plus starting a run)."""
+"""List, load and save runs, and start live runs. The dashboard only reads run folders and live runs'
+published state (plus starting and steering a run)."""
 from __future__ import annotations
 
 import json
@@ -12,12 +13,15 @@ RUNS_DIR = ROOT / "runs"
 REQUIRED = ("config.json", "events.jsonl", "routes.json", "timeline.jsonl", "metrics.json", "victims.json")
 
 
-def list_runs(runs_dir: Path = RUNS_DIR) -> list[str]:
-    """Complete runs, newest first."""
+def list_runs(runs_dir: Path = RUNS_DIR, policies: tuple[str, ...] | None = None) -> list[str]:
+    """Complete runs, newest first, optionally only those of the given policies."""
     if not runs_dir.exists():
         return []
     done = [p for p in runs_dir.iterdir() if p.is_dir() and all((p / f).exists() for f in REQUIRED)]
-    return [p.name for p in sorted(done, key=lambda p: (p.stat().st_mtime, p.name), reverse=True)]
+    names = [p.name for p in sorted(done, key=lambda p: (p.stat().st_mtime, p.name), reverse=True)]
+    if policies is None:
+        return names
+    return [n for n in names if run_config(n, runs_dir).get("policy") in policies]
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -48,12 +52,49 @@ def load_run(run_id: str, runs_dir: Path = RUNS_DIR) -> dict:
     }
 
 
+def scenario_settings(n_incidents: int | None, replay_from: str | None, runs_dir: Path = RUNS_DIR):
+    """Config and placed incidents for a new run. A replay always uses the recorded run's incident count
+    and the incidents placed during it."""
+    from dataclasses import replace
+
+    from sim.config import default_config
+
+    spawns: list[dict] = []
+    if replay_from:
+        n_incidents, spawns = incidents_of(replay_from, runs_dir), spawns_of(replay_from, runs_dir)
+    return (replace(default_config(), n_incidents=n_incidents) if n_incidents else None), spawns
+
+
 def run_and_save(seed: int, policy: str, progress_cb: Callable[[int, int], None] | None = None,
-                 roads=None, llm_mode: str | None = None, replay_from: str | None = None) -> str:
+                 roads=None, llm_mode: str | None = None, replay_from: str | None = None,
+                 n_incidents: int | None = None, spawns: list[dict] | None = None) -> str:
+    """A whole run at once (the baseline behind Compare)."""
     from sim.runner import run
 
+    cfg, recorded = scenario_settings(n_incidents, replay_from)
     src = RUNS_DIR / replay_from if replay_from else None
-    return run(seed, policy, progress_cb, roads=roads, llm_mode=llm_mode, replay_from=src).name
+    return run(seed, policy, progress_cb, roads=roads, llm_mode=llm_mode, replay_from=src, cfg=cfg,
+               spawns=spawns if spawns is not None else recorded).name
+
+
+def start_live(seed: int, policy: str, *, paused: bool, rate: float, roads=None, llm_mode: str | None = None,
+               replay_from: str | None = None, n_incidents: int | None = None):
+    """A live run (DESIGN 13.3), already started in the background; saved under runs/ when it finishes."""
+    from sim.live import LiveRun
+
+    cfg, spawns = scenario_settings(n_incidents, replay_from)
+    extra = {} if policy == "greedy" else {"llm_mode": llm_mode,
+                                            "replay_from": RUNS_DIR / replay_from if replay_from else None}
+    return LiveRun(seed, policy, rate=rate, paused=paused, runs_dir=RUNS_DIR, cfg=cfg, roads=roads,
+                   spawns=spawns, **extra).start()
+
+
+def incidents_of(run_id: str, runs_dir: Path = RUNS_DIR) -> int:
+    return run_config(run_id, runs_dir)["sim"]["n_incidents"]
+
+
+def spawns_of(run_id: str, runs_dir: Path = RUNS_DIR) -> list[dict]:
+    return run_config(run_id, runs_dir).get("spawns", [])
 
 
 def replayable_runs(policy: str, runs_dir: Path = RUNS_DIR) -> list[str]:

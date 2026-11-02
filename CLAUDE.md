@@ -17,7 +17,7 @@ The repo starts empty except for this file and `docs/DESIGN.md`. We build in 5 p
 3. **The road network is a committed file.** Simulation code never downloads anything; only the one-time fetch script does.
 4. **Rules compute numbers.** Travel times, capacities, deadlines and metrics are plain, tested Python functions.
 5. **The baseline and future agents share the same world.** Never add a world rule that only one of them experiences.
-6. **The dashboard only reads saved runs** (plus calling the run function behind the Run button). It never contains simulation logic.
+6. **The dashboard only reads runs**: saved run folders and the minutes a live run publishes (DESIGN 13.3). It starts and steers runs (run, pause, resume, step, speed, place an incident) through `sim/live.py` and `run_store`, but never contains simulation logic.
 7. **Don't name any local package `agents`** (it clashes with the OpenAI Agents SDK import). Future agents live in `coordination/`.
 
 ## Setup (for the user, done once)
@@ -62,7 +62,8 @@ sim/
   agent_actions.py     # agent-only actions (holds, transfers, loans, redirect, reroute)
   views.py             # World.snapshot() data and road-time helpers for policies
   metrics.py           # DESIGN section 11 (Phase 1 subset)
-  runner.py            # run(seed, policy, progress_cb) -> run folder
+  runner.py            # run(seed, policy, progress_cb) -> run folder; prepare / Stepper / save shared with live runs
+  live.py              # live runs (DESIGN 13.3): background stepping, pause, step, speed, placed incidents
 policies/
   base.py              # Policy interface: decide(view, events) -> list[Action]
   greedy.py            # DESIGN section 10
@@ -264,6 +265,16 @@ Read DESIGN sections 1, 11 and 12. The evaluation seeds are 1 to 20; don't tune 
 - [x] All tests pass with no network.
 - [x] One click produces the final comparison (rules only; checked in a headless browser: 100 runs in about 30 seconds).
 - [ ] A live evaluation (agents 3 times per seed, DESIGN 11.2) and its replay (needs the user's model and key, like the Phase 3 live run).
+
+## Live runs (DESIGN 3.3, 12, 13.3)
+
+Agreed with the user after Phase 5: runs happen in real time instead of being computed first and played back.
+
+- [x] `sim/live.py`: a background worker steps the world minute by minute at the chosen speed (1x = 360 minutes in about 50 seconds; 0.5x, 2x, 4x); pause, resume, step one minute; a finished live run saves byte-identical files to a headless run.
+- [x] Placed incidents: pause, click a street intersection, choose type and victims (or let the seed decide); reported the next minute; saved with the run and replayable; the baseline runs against the same incidents.
+- [x] Dashboard: Run simulation starts a live run; Restart with new seed waits paused at minute 0; Past runs replay from minute 0 with the same clock; no time slider; Policy menu shows the baseline and agents (ablations stay on the Evaluation page); 4 incidents by default; "Walk-in patients (N)" on each hospital.
+- [x] Tests: live run equals headless run (with and without placed incidents), spawn rejections, pause, step and resume in the background, abandoning a run.
+- [ ] Decide later: whether the baseline runs alongside a live agents run on the same clock (for now Compare works once the run is saved).
 
 ## Things not to do
 

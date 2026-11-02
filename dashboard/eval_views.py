@@ -116,3 +116,22 @@ def per_seed_dumbbell(summary: dict, policy: str = "agents", mode: str = "dark")
             marker={"color": color, "size": 10, "line": {"color": SURFACE[mode], "width": 2}},
             hovertemplate="%{y} · " + name + ": %{x}%<extra></extra>"))
     return _layout(fig, mode, 80 + 24 * len(seeds), "Criticals on time, %")
+
+
+def per_seed_bars(summary: dict, policy: str, mode: str = "dark") -> go.Figure:
+    """One policy's criticals on time per seed, with its mean as a reference line (single series, one hue)."""
+    values = summary["per_seed"][policy]
+    get = lambda s: values.get(str(s), values.get(s))
+    seeds = [s for s in summary["seeds"] if get(s) is not None]
+    avg = summary["metrics"][policy][PRIMARY]["mean"]
+    fig = go.Figure(go.Bar(
+        y=[f"Seed {s}" for s in seeds], x=[get(s) for s in seeds], orientation="h",
+        marker={"color": ACCENT[mode], "cornerradius": 4},
+        text=[f"{get(s)}%" for s in seeds], textposition="outside", cliponaxis=False,
+        textfont={"color": INK[mode]}, hovertemplate="%{y}: %{x}% on time<extra></extra>"))
+    fig.add_vline(x=avg, line={"color": INK[mode], "width": 1})
+    fig.add_annotation(x=avg, y=1, yref="paper", yanchor="bottom", text=f"mean {avg}%", showarrow=False,
+                       font={"color": INK[mode]})
+    fig = _layout(fig, mode, 90 + 26 * len(seeds), "Criticals on time, %")
+    fig.update_layout(margin={"t": 30})
+    return fig

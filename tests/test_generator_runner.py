@@ -52,6 +52,12 @@ def test_generator_follows_scenario_rules():
             assert v.care_need == "general"
 
 
+def test_fewer_incidents_keep_one_surge():
+    for n in (3, 4):
+        sc = generate(3, replace(CFG, n_incidents=n), roads(), PLACES)
+        assert len(sc.incidents) == n and sum(i.surge for i in sc.incidents) == 1
+
+
 def test_walk_ins_and_fleet():
     sc = generate(3, CFG, roads(), PLACES)
     hosp = {h.id: h for h in sc.hospitals}

@@ -23,6 +23,7 @@ UNIT_STYLE = {
 }
 HOSPITAL_HEX = "#00796B"
 HOSPITAL_RGB = [0, 121, 107]
+WALK_IN_RGB = [69, 90, 100]
 INCIDENT_RED, INCIDENT_AMBER, INCIDENT_DONE = [211, 47, 47, 210], [255, 160, 0, 210], [158, 158, 158, 110]
 LOAD_OK, LOAD_BUSY, LOAD_FULL = [46, 125, 50], [230, 120, 0], [198, 40, 40]
 FREE_STATES = ("idle",)
@@ -134,14 +135,19 @@ def load_color(h: dict) -> list[int]:
     return LOAD_FULL if load >= 1 else LOAD_BUSY if load >= 0.6 else LOAD_OK
 
 
+def walk_ins_in_er(h: dict) -> int:
+    return sum(1 for p in h.get("patients", []) if p["walk_in"])
+
+
 def hospital_rows(minute: dict) -> list[dict]:
     return [{"lon": h["lon"], "lat": h["lat"], "sign": "H",
-             "name": f"{h['id']} {h['name']}",
+             "name": f"{h['id']} {h['name']}", "walk_ins": f"Walk-in patients ({walk_ins_in_er(h)})",
              "er": f"ER {h['er_used']}/{h['er_slots']}" + (f" (+{h['reserved']})" if h["reserved"] else ""),
              "er_color": load_color(h),
              "label": f"{h['id']} {h['name']} (hospital)\nER {h['er_used']}/{h['er_slots']} in use, "
                       f"{h['reserved']} reserved, {h['waiting_for_staff']} waiting for staff\n"
-                      f"Ward {h['ward_used']}/{h['ward_beds']}, boarding {h['boarding']}"}
+                      f"Ward {h['ward_used']}/{h['ward_beds']}, boarding {h['boarding']}\n"
+                      f"{walk_ins_in_er(h)} walk-in patients in the ER"}
             for h in minute["hospitals"]]
 
 
@@ -178,7 +184,20 @@ def _label_layer(rows: list[dict], layer_id: str, text: str, color, offset: list
                         get_background_color=[255, 255, 255, 235], get_pixel_offset=offset)
 
 
-def build_deck(run: dict, t: float, view: dict) -> pdk.Deck:
+def spawn_layers(points: list[dict], picked: dict | None) -> list[pdk.Layer]:
+    """Clickable road intersections for placing an incident, and a ring around the chosen one."""
+    layers = [pdk.Layer("ScatterplotLayer", points, id="spawn-points", get_position=["lon", "lat"],
+                        get_fill_color=[211, 47, 47, 90], get_radius=12, radius_min_pixels=3,
+                        radius_max_pixels=6, pickable=True, auto_highlight=True,
+                        highlight_color=[211, 47, 47, 255])]
+    if picked:
+        layers.append(pdk.Layer("ScatterplotLayer", [picked], id="spawn-picked", get_position=["lon", "lat"],
+                                get_fill_color=[211, 47, 47, 60], get_line_color=[211, 47, 47, 255],
+                                stroked=True, line_width_min_pixels=3, get_radius=60, radius_min_pixels=12))
+    return layers
+
+
+def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = ()) -> pdk.Deck:
     minute = run["timeline"][min(int(t), len(run["timeline"]) - 1)]
     units = units_at(run, t)
     incidents = incident_rows(minute)
@@ -199,8 +218,10 @@ def build_deck(run: dict, t: float, view: dict) -> pdk.Deck:
                      get_background_color=HOSPITAL_RGB + [255]),
         _label_layer(hospitals, "hospital-names", "name", HOSPITAL_RGB, [0, -24]),
         _label_layer(hospitals, "hospital-er", "er", "er_color", [0, 24]),
+        _label_layer(hospitals, "hospital-walk-ins", "walk_ins", WALK_IN_RGB, [0, -46]),
         _badge_layer(rows, "units", 12, [5, 3], get_text="badge", get_color="fg",
                      get_background_color="bg", get_pixel_offset="offset"),
+        *extra,
     ]
     return pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(**view),
                     map_provider="carto", map_style=pdk.map_styles.CARTO_LIGHT,
@@ -227,7 +248,8 @@ def legend_html() -> str:
         f"{units}<br>"
         f"{_badge('H', HOSPITAL_HEX, border=HOSPITAL_HEX)} Hospital: ER in use "
         f"<b style='color:rgb(46,125,50)'>under 60%</b> / <b style='color:rgb(230,120,0)'>60 to 99%</b> / "
-        f"<b style='color:rgb(198,40,40)'>full</b>, (+n) = reserved for incoming ambulances<br>"
+        f"<b style='color:rgb(198,40,40)'>full</b>, (+n) = reserved for incoming ambulances, "
+        "walk-in patients = people who came in on their own and are in the ER now<br>"
         f"{_dot(INCIDENT_RED)} Incident with criticals &nbsp; {_dot(INCIDENT_AMBER)} Incident, no criticals &nbsp; "
         f"{_dot(INCIDENT_DONE)} Everyone at hospital (number = victims still at the scene)<br>"
         f"{_badge('ALS2', UNIT_STYLE['ALS']['hex'], opacity=0.45)} faded = idle at base &nbsp;·&nbsp; "

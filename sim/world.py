@@ -13,8 +13,8 @@ from sim.actions import (Action, AssignTeam, LendStaff, LendVehicle, Redirect, R
                          Reroute, Reserve, SendToScene, SetDestination, TransferPatient)
 from sim.agent_actions import AgentActions
 from sim.config import SimConfig
-from sim.models import (TEAM_FOR_REQUIREMENT, TEAM_KINDS, VEHICLE_KIND, Reservation, Scenario, Staff, Trip, Unit,
-                        Victim)
+from sim.models import (TEAM_FOR_REQUIREMENT, TEAM_KINDS, VEHICLE_KIND, Incident, Reservation, Scenario, Staff,
+                        Trip, Unit, Victim)
 from sim.roads import RoadNetwork
 from sim.rules import carry_rejection, free_slots, loading_ready_at, victim_priority
 from sim.views import WorldView, build_snapshot
@@ -101,6 +101,19 @@ class World(AgentActions):
 
     def record_minute(self) -> None:
         self.timeline.append(build_snapshot(self))
+
+    def add_incident(self, inc: Incident, victims: list[Victim]) -> None:
+        """An incident placed during a live run, reported at its own (future) minute. Victims keep the order
+        a run that knew the incident from the start would have: scenario victims first, then walk-ins."""
+        if inc.reported_at <= self.t or inc.reported_at >= self.cfg.horizon:
+            raise ValueError("spawn_time_out_of_range")
+        self.incidents[inc.id] = inc
+        walk_ins = {vid: v for vid, v in self.victims.items() if v.walk_in}
+        for vid in walk_ins:
+            del self.victims[vid]
+        self.victims.update({v.id: v for v in victims})
+        self.victims.update(walk_ins)
+        self._incidents_at[inc.reported_at].append(inc.id)
 
     # ----- incidents and scenes -----
 
