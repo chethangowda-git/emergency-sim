@@ -65,9 +65,9 @@ With live LLM calls, a minute lasts as long as the agents take to answer: the cl
 
 ## The area
 
-Central Boston, MA: Back Bay, South End, Fenway, Longwood, Downtown, North End and Charlestown. That's a box of about 5 × 6 km (`config/area.json`). The drivable road network, real hospital sites, and ambulance and fire stations were downloaded once from OpenStreetMap by `scripts/fetch_roads.py` and committed under `data/roads/`. Simulations never download anything.
+Central Boston, MA: Back Bay, South End, Fenway, Longwood, Downtown, North End and Charlestown. That's a box of about 5 × 6 km (`config/area.json`). The drivable road network, real hospital sites and real fire stations were downloaded once from OpenStreetMap by `scripts/fetch_roads.py` and committed under `data/roads/`. Simulations never download anything.
 
-Ambulance and fire station locations could not be downloaded (the OpenStreetMap server was overloaded). For now, ALS ambulances are based at the hospitals, and BLS ambulances, fire teams and rescue teams at seeded random street corners. Running `python scripts/fetch_roads.py` again when OpenStreetMap responds adds real stations, which changes every scenario's unit bases.
+Unit bases are real places. ALS ambulances are based at the three hospitals. BLS ambulances, fire teams and rescue teams are based at 18 real Boston, Cambridge and Somerville fire stations (Boston EMS shares stations with the fire department). The seed decides which station each unit uses, and no two units of the same type share one. The only ambulance station OpenStreetMap lists in the area belongs to a private company, so it isn't used: Dispatch controls the public fleet only. `python scripts/fetch_roads.py --stations-only` refreshes the stations without touching the roads or hospitals.
 
 Three well-spread real hospital sites host the simulated hospitals. They have **fictional names and capacities** (Central Trauma Center, Northside General, Eastside Community) and say nothing about the real hospitals at those locations.
 

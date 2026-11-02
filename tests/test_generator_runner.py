@@ -126,3 +126,22 @@ def test_agents_on_the_real_network_smoke(tmp_path):
     out = run(42, "agents", runs_dir=tmp_path, llm_mode="off")
     m = json.loads((out / "metrics.json").read_text())
     assert m["victims_delivered"] > 0 and m["negotiation"]["threads"] > 0
+
+
+def test_real_bases_are_public_fire_stations_one_unit_type_per_station():
+    import random
+
+    from sim.config import load_places
+    from sim.generator import make_fleet
+    places = load_places()
+    fire = {s["id"]: s["node"] for s in places["fire_stations"]}
+    hospitals = {h["id"]: h["node"] for h in places["hospitals"]}
+    assert len(fire) >= 2 and places["ambulance_stations"] == []      # the private ambulance company is excluded
+    for seed in (1, 42):
+        units = make_fleet(random.Random(seed), CFG, places, [])
+        assert units == make_fleet(random.Random(seed), CFG, places, [])
+        for kind in ("BLS", "FIRE", "RESCUE"):
+            mine = [u for u in units if u.kind == kind]
+            assert all(fire[u.base] == u.base_node for u in mine)
+            assert len({u.base for u in mine}) == len(mine)
+        assert all(hospitals[u.base] == u.base_node for u in units if u.kind == "ALS")

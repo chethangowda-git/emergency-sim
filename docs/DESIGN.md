@@ -82,7 +82,7 @@ One incident per scenario is a large surge event (multi-vehicle pileup or bus fi
 
 All paramedics belong to Dispatch. Default fleet: 3 ALS, 3 BLS, 2 fire teams, 1 rescue team.
 
-Unit bases: ambulances at hospitals and at real ambulance or fire stations in the area (taken from OpenStreetMap when available, otherwise seeded random nodes); fire and rescue teams at fire stations.
+Unit bases: ALS ambulances at the hospitals; BLS ambulances at real public ambulance or fire stations in the area (EMS crews share fire stations); fire and rescue teams at fire stations. Stations come from OpenStreetMap (private ambulance companies excluded: Dispatch controls the public fleet only), otherwise seeded random nodes. Each unit's station is chosen from the seed, and no two units of the same type share a station.
 
 Unit timings: 5 minutes on scene before transport, 5 minutes handover at the hospital, then the unit returns to base (and can be reassigned while returning).
 
@@ -177,7 +177,7 @@ The simulator emits events into a JSONL log, including: `incident_reported`, `sc
 | Report-to-care time | Hospital arrival (delivery) minus report time |
 | "Victim waiting anywhere" (idle minutes) | Any incident victim reported but not yet delivered to a hospital |
 | Utilization | `1 - real free capacity / ER slots`, with real free capacity = min(free ER slots, free doctor slots, free nurse slots) |
-| Unit bases (current data) | The OpenStreetMap station query failed (server overloaded), so `places.json` has no stations: ALS units are based at H1 to H3, and BLS, fire and rescue units at seeded random road nodes (the 3.4 fallback). Re-running `scripts/fetch_roads.py` later adds real stations and changes every scenario's bases |
+| Unit bases (current data) | `places.json` holds 18 real fire stations inside the area (Boston, Cambridge and Somerville fire departments, from OpenStreetMap, each snapped to a road node within 250 m) and no ambulance stations: the only one found, Cataldo Ambulance, is a private company and is excluded. So ALS units are based at H1 to H3, and BLS, fire and rescue units at fire stations, as Boston EMS shares stations with the fire department. Fetched with `scripts/fetch_roads.py --stations-only`, which keeps the road network and hospitals unchanged |
 | Transferred patient | Treatment continues at the receiver for the remaining minutes once staff are free there |
 | Walk-in, no free slot | Takes a hold first (latest created), then a firm reservation (expected latest) |
 | Lent hospital vehicle | Carries like a BLS: up to 2 non-critical or stabilized patients |

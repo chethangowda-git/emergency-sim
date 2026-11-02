@@ -4,10 +4,12 @@ This is the only code in the project that touches the network. Its outputs,
 data/roads/network.graphml and data/roads/places.json, are committed; the
 simulator only reads them.
 
-Run: python scripts/fetch_roads.py [--skip-stations]
+Run: python scripts/fetch_roads.py [--skip-stations | --stations-only]
 
 --skip-stations saves places.json with no ambulance or fire stations (for when the
 Overpass server is overloaded); units are then based at seeded random nodes (DESIGN 3.4).
+--stations-only keeps the committed road network and hospitals and fetches only the
+stations; places.json is rewritten only if at least 2 fire stations are found.
 """
 from __future__ import annotations
 
@@ -26,11 +28,24 @@ ROOT = Path(__file__).resolve().parent.parent
 AREA_FILE = ROOT / "config" / "area.json"
 OUT_DIR = ROOT / "data" / "roads"
 
+OVERPASS_URLS = (
+    "https://overpass-api.de/api",
+    "https://overpass.kumi.systems/api",
+    "https://overpass.private.coffee/api",
+)
+OVERPASS_ERRORS = (ox._errors.ResponseStatusCodeError, requests.exceptions.ConnectionError,
+                   requests.exceptions.Timeout)
+MAX_SNAP_M = 250      # a station farther than this from any road node is outside the drivable area
+MIN_FIRE_STATIONS = 2  # for --stations-only to replace the random bases
+
 HOSPITAL_NAMES = {
     "H1": "Central Trauma Center",
     "H2": "Northside General",
     "H3": "Eastside Community",
 }
+
+# Private ambulance companies: Dispatch controls the public fleet only (DESIGN 3.4).
+PRIVATE_AMBULANCE_WORDS = ("cataldo",)
 
 # Specialist or non-acute campuses that would not take emergency ambulances.
 NON_ACUTE_WORDS = (
@@ -87,18 +102,21 @@ def nearest_node(g: nx.DiGraph, lat: float, lon: float) -> str:
     return min(g.nodes, key=lambda n: (haversine_m(lat, lon, g.nodes[n]["y"], g.nodes[n]["x"]), n))
 
 
-def features_with_retry(area: dict, tags: dict, attempts: int = 7):
-    """The public Overpass server is often at capacity; back off and retry."""
-    wait = 15
-    for attempt in range(1, attempts + 1):
-        try:
-            return ox.features_from_bbox(bbox_tuple(area), tags=tags)
-        except (ox._errors.ResponseStatusCodeError, requests.exceptions.ConnectionError):
-            if attempt == attempts:
-                raise
-            print(f"  Overpass busy, retrying in {wait}s ...")
-            time.sleep(wait)
-            wait *= 2
+def features_with_retry(area: dict, tags: dict, attempts: int = 4):
+    """Public Overpass servers are often at capacity: back off and retry, then try the next server."""
+    for url in OVERPASS_URLS:
+        ox.settings.overpass_url = url
+        ox.settings.overpass_rate_limit = url == OVERPASS_URLS[0]  # only the main server has /status
+        wait = 10
+        for attempt in range(1, attempts + 1):
+            try:
+                return ox.features_from_bbox(bbox_tuple(area), tags=tags)
+            except OVERPASS_ERRORS as exc:
+                print(f"  {url}: {type(exc).__name__} (attempt {attempt}/{attempts})")
+                if attempt < attempts:
+                    time.sleep(wait)
+                    wait *= 2
+    raise RuntimeError("every Overpass server failed")
 
 
 def fetch_points(area: dict, tags: dict) -> list[dict]:
@@ -185,22 +203,52 @@ def label_hospitals(g: nx.DiGraph, trio: list[dict]) -> list[dict]:
     return out
 
 
-def stations(g: nx.DiGraph, area: dict, tags: dict, prefix: str) -> list[dict]:
-    snapped = snap_unique(g, fetch_points(area, tags))
+def inside(area: dict, p: dict) -> bool:
+    b = area["bbox"]
+    return b["south"] <= p["lat"] <= b["north"] and b["west"] <= p["lon"] <= b["east"]
+
+
+def stations(g: nx.DiGraph, area: dict, tags: dict, prefix: str, exclude: tuple[str, ...] = ()) -> list[dict]:
+    points = [p for p in fetch_points(area, tags)
+              if inside(area, p) and not any(w in p["name"].lower() for w in exclude)]
+    snapped = [p for p in snap_unique(g, points)
+               if haversine_m(p["lat"], p["lon"], g.nodes[p["node"]]["y"], g.nodes[p["node"]]["x"]) <= MAX_SNAP_M]
+    for p in snapped:
+        print(f"    {p['name'] or '(unnamed)'} at ({p['lat']:.4f}, {p['lon']:.4f}) -> node {p['node']}")
     snapped.sort(key=lambda p: (-g.nodes[p["node"]]["y"], g.nodes[p["node"]]["x"]))
     return [
-        {"id": f"{prefix}{i}", "node": p["node"],
+        {"id": f"{prefix}{i}", "name": p["name"], "node": p["node"],
          "lat": g.nodes[p["node"]]["y"], "lon": g.nodes[p["node"]]["x"]}
         for i, p in enumerate(snapped, start=1)
     ]
 
 
+def stations_only(area: dict) -> None:
+    """Add stations to the committed places.json without touching the road network or hospitals."""
+    g = nx.read_graphml(OUT_DIR / "network.graphml")
+    places = json.loads((OUT_DIR / "places.json").read_text())
+    print("Ambulance stations:")
+    amb = stations(g, area, {"emergency": "ambulance_station"}, "AS", PRIVATE_AMBULANCE_WORDS)
+    print("Fire stations:")
+    fire = stations(g, area, {"amenity": "fire_station"}, "FS")
+    print(f"  {len(amb)} public ambulance stations, {len(fire)} fire stations inside the area")
+    if len(fire) < MIN_FIRE_STATIONS:
+        raise SystemExit(f"Fewer than {MIN_FIRE_STATIONS} fire stations; places.json left unchanged.")
+    places["ambulance_stations"], places["fire_stations"] = amb, fire
+    (OUT_DIR / "places.json").write_text(json.dumps(places, indent=2) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--skip-stations", action="store_true",
-                        help="save no ambulance or fire stations; units get seeded random bases")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--skip-stations", action="store_true",
+                      help="save no ambulance or fire stations; units get seeded random bases")
+    mode.add_argument("--stations-only", action="store_true",
+                      help="keep the committed roads and hospitals; fetch only the stations")
     args = parser.parse_args()
     area = load_area()
+    if args.stations_only:
+        return stations_only(area)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Downloading drivable roads for {area['name']} ...")
     g = to_lean_digraph(download_graph(area), area["name"])
@@ -216,7 +264,7 @@ def main() -> None:
         "area": area["name"],
         "hospitals": hospitals,
         "ambulance_stations": [] if args.skip_stations else
-        stations(g, area, {"emergency": "ambulance_station"}, "AS"),
+        stations(g, area, {"emergency": "ambulance_station"}, "AS", PRIVATE_AMBULANCE_WORDS),
         "fire_stations": [] if args.skip_stations else stations(g, area, {"amenity": "fire_station"}, "FS"),
     }
     (OUT_DIR / "places.json").write_text(json.dumps(places, indent=2) + "\n")

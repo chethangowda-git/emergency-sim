@@ -49,7 +49,7 @@ scripts/
   fetch_roads.py       # one-time: download roads + hospital and station locations
 data/roads/            # committed outputs of fetch_roads.py
   network.graphml
-  places.json          # hospitals (3 chosen), ambulance and fire stations
+  places.json          # hospitals (3 chosen), public ambulance stations (none) and fire stations
 sim/
   config.py            # SimConfig dataclass, all tunables from DESIGN section 3
   roads.py             # load network, fastest route, route geometry, position along route
@@ -131,7 +131,7 @@ Read DESIGN sections 3, 10, 11, 13, 15 and 17.
 
 - [x] **First, ask the user which city and area to use** (about 5 to 10 km across, with at least 3 hospitals). Save it in `config/area.json`.
 - [x] `scripts/fetch_roads.py`: download the drivable network with OSMnx; keep the largest strongly connected component; add edge speeds and travel times (default speeds where limits are missing); save `network.graphml`.
-- [x] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5). (Stations still missing: Overpass was overloaded, so `--skip-stations` was used; re-run the script to add them.)
+- [x] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5). (Stations added later with `--stations-only`: 18 public fire stations; the only ambulance station is private and excluded, so BLS units are based at fire stations.)
 - [x] Commit both files. Simulation code only reads them.
 
 ### 1.2 Roads module
