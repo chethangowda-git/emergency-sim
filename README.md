@@ -6,36 +6,38 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 
 ## Results
 
-Seeds 1 to 20, the same incidents, walk-ins and resources for every policy, **rules only (no LLM)**:
+**Rules only (no LLM) · real fire-station bases · 12 incidents per scenario · seeds 1 to 20** (`runs/evals/eval-004`). Every policy gets the same incidents, walk-ins and resources:
 
-> The multi-agent system got **70.8%** of critical victims to care on time versus **38.3%** for the greedy baseline, winning on **18 of 20** seeds (1 tie, 1 loss).
+> The multi-agent system got **61.1%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **18 of 20** seeds (1 tie, 1 loss).
 
-| Policy | Criticals on time | Seeds won (W/T/L) | Report → care | Response time | Deadlines missed | Victims delivered |
-|---|---|---|---|---|---|---|
-| Greedy baseline | 38.3% ± 18.4 | – | 87.4 min | 46.5 min | 18.7 | 26.3 |
-| **Agents** | **70.8% ± 23.2** | **18 / 1 / 1** | **70.3 min** | 29.6 min | **11.8** | **29.4** |
-| Agents, no negotiation | 69.1% ± 22.8 | 18 / 1 / 1 | 81.4 min | 33.8 min | 16.0 | 26.9 |
-| Agents, no Arbiter | 70.0% ± 22.7 | 18 / 1 / 1 | 70.1 min | 29.4 min | 12.0 | 29.4 |
-| Agents, rule hospitals | 67.3% ± 20.5 | 17 / 2 / 1 | 83.0 min | 33.9 min | 14.8 | 27.7 |
+| Policy | Criticals on time | Unserved criticals | Seeds won (W/T/L) | Report → care | Response time | Deadlines missed | Victims delivered |
+|---|---|---|---|---|---|---|---|
+| Greedy baseline | 39.6% ± 17.1 | 0.40 | – | 88.3 min | 48.3 min | 18.7 | 26.4 |
+| **Agents** | **61.1% ± 22.5** | 0.05 | 18 / 1 / 1 | 69.9 min | 30.8 min | 12.0 | **29.6** |
+| Agents, no negotiation | 71.8% ± 20.2 | 0 | 19 / 0 / 1 | 80.8 min | 35.8 min | 15.5 | 27.1 |
+| Agents, no Arbiter | 64.6% ± 24.5 | 0.15 | 17 / 2 / 1 | **69.0 min** | **29.8 min** | **11.7** | 29.4 |
+| Agents, rule hospitals | 69.5% ± 18.7 | 0 | 19 / 0 / 1 | 81.1 min | 34.3 min | 14.9 | 27.8 |
 
 Values are means over the 20 seeds; ± is the standard deviation across seeds. A seed counts as won when the policy gets strictly more criticals to care on time than the baseline.
 
-**Against the baseline**, the full agent system improves criticals on time by 85%, cuts average report-to-care time by 20% (17 minutes), response time by 36% and missed deadlines by 37%, and delivers 12% more victims. Hospital overload minutes drop by 12%. Two things get worse: ER load balance (busiest minus quietest hospital peak, 60 vs 56 points) and rejected actions (about 50 per run, against none for the baseline; see below).
+**Against the baseline**, the full agent system improves criticals on time by 54% (21.5 points), cuts report-to-care time by 21% (18 minutes), response time by 36% and missed deadlines by 36%, and delivers 12% more victims. Hospital overload minutes drop by 13%. ER load balance is slightly worse (56 vs 53 points), and about 51 agent actions per run are rejected, against none for the baseline (see below).
 
 **What the ablations show:**
 
-- **Most of the gain on criticals comes from coordination itself, not from negotiation.** With negotiation switched off, the agents still get 69.1% of criticals on time. Incident Assessment sizing the response, Dispatch planning units by urgency, and admissions by earliest capable arrival already double the baseline.
-- **Negotiation pays off in speed and throughput.** Compared with no negotiation, the full system reaches care 11 minutes sooner, misses 4 fewer deadlines per run and delivers 2.5 more victims. That variant switches off counters, holds, transfers and mutual aid together (DESIGN 11.3), so this measures them as a group.
-- **The Arbiter adds little in rules-only mode.** Without it, escalations fall back to the least-bad option, which is usually what the Arbiter would rule anyway (70.0% vs 70.8%).
-- **Hospital agents earn their place.** Replacing them with "accept if real capacity is free" costs 3.5 points on criticals, 13 minutes to care and 3 more missed deadlines per run.
+- **Every agent variant beats the baseline on 17 to 19 of 20 seeds.** Coordination itself (Incident Assessment sizing the response, Dispatch planning units by urgency, admissions by earliest capable arrival) carries most of the gain: with negotiation switched off, the agents get 71.8% of criticals on time.
+- **The full system is the weakest variant on criticals, and the best or near best on everything else.** Negotiation (counters, holds, transfers and mutual aid, switched off together in DESIGN 11.3) gets victims to care 11 minutes sooner, misses 3.5 fewer deadlines and delivers 2.5 more victims than no negotiation, but costs 10.7 points on criticals. The hospital agents show the same trade against rule hospitals (8.5 points on criticals for 11 minutes faster care).
+- **The Arbiter costs 3.5 points on criticals in rules-only mode** (61.1% with it, 64.6% without), with about the same speed and throughput.
+- This is a change from the earlier evaluation with seeded random bases, where the full system was the best variant (70.8%). These seeds are not used for tuning (CLAUDE.md), so the agent rules were not adjusted to the new bases.
 
-**Where the agents don't win:** seed 2 is a tie (18.8% each), and the agents lose seed 9 (36.4% vs 54.5%). Results vary a lot between scenarios (standard deviation about 20 points), so the per-seed chart on the Evaluation page is worth a look alongside the means.
+**Where the agents don't win:** the full system ties seed 14 (57.1% each) and loses seed 9 (36.4% vs 45.5%). Results vary a lot between scenarios (standard deviation about 20 points), so the per-seed chart on the Evaluation page is worth a look alongside the means.
+
+**Seed 42** (the reference scenario, not an evaluation seed), rules only, 12 incidents: greedy and agents both get 8 of 15 criticals on time (53.3%). The agents reach care sooner (75.4 vs 82.0 min), miss 12 deadlines instead of 17 and deliver 36 victims instead of 32.
 
 **Caveats:**
 
-- **No LLM was involved.** Every agent decision in these numbers was made by the rules (fast path and defaults). DESIGN 11.2 asks for the agents to run 3 times per seed with a live, recorded LLM. That evaluation still needs a pinned OpenAI model and an API key, and its results may differ.
+- **No LLM was involved.** Every agent decision in these numbers was made by the rules (fast path and defaults). DESIGN 11.2 asks for the agents to run 3 times per seed with a live, recorded LLM; that evaluation has not been run yet, and its results may differ.
 - Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). Tuning stopped there so the evaluation stays fair, but the seeds were not completely unseen.
-- About 50 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate, but the cost shows up as extra negotiation time.
+- About 51 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate, but the cost shows up as extra negotiation time.
 - The world is a simplified one (section [Assumptions](#assumptions-and-simplifications)): no traffic, no deterioration, approximate times and fictional hospital capacities.
 
 To reproduce: open the **Evaluation** page and press **Run evaluation** (about 30 seconds), or run `python -m cli eval --seeds 1-20`. Rules-only runs are deterministic, so you get exactly these numbers.
@@ -67,7 +69,7 @@ With live LLM calls, a minute lasts as long as the agents take to answer: the cl
 
 Central Boston, MA: Back Bay, South End, Fenway, Longwood, Downtown, North End and Charlestown. That's a box of about 5 × 6 km (`config/area.json`). The drivable road network, real hospital sites and real fire stations were downloaded once from OpenStreetMap by `scripts/fetch_roads.py` and committed under `data/roads/`. Simulations never download anything.
 
-Unit bases are real places. ALS ambulances are based at the three hospitals. BLS ambulances, fire teams and rescue teams are based at 18 real Boston, Cambridge and Somerville fire stations (Boston EMS shares stations with the fire department). The seed decides which station each unit uses, and no two units of the same type share one. The only ambulance station OpenStreetMap lists in the area belongs to a private company, so it isn't used: Dispatch controls the public fleet only. `python scripts/fetch_roads.py --stations-only` refreshes the stations without touching the roads or hospitals.
+Unit bases are real places. ALS ambulances are based at the three hospitals. BLS ambulances, fire teams and rescue teams are based at 16 real Boston, Cambridge and Somerville fire stations (Boston EMS shares stations with the fire department; the Marine Unit and Fire Department Headquarters are left out). The seed decides which station each unit uses, and no two units of the same type share one. The only ambulance station OpenStreetMap lists in the area belongs to a private company, so it isn't used: Dispatch controls the public fleet only. `python scripts/fetch_roads.py --stations-only` refreshes the stations without touching the roads or hospitals.
 
 Three well-spread real hospital sites host the simulated hospitals. They have **fictional names and capacities** (Central Trauma Center, Northside General, Eastside Community) and say nothing about the real hospitals at those locations.
 

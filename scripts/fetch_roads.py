@@ -46,6 +46,8 @@ HOSPITAL_NAMES = {
 
 # Private ambulance companies: Dispatch controls the public fleet only (DESIGN 3.4).
 PRIVATE_AMBULANCE_WORDS = ("cataldo",)
+# Fire department sites that house no engine company to base a unit at.
+NON_BASE_FIRE_WORDS = ("marine unit", "headquarters")
 
 # Specialist or non-acute campuses that would not take emergency ambulances.
 NON_ACUTE_WORDS = (
@@ -230,7 +232,7 @@ def stations_only(area: dict) -> None:
     print("Ambulance stations:")
     amb = stations(g, area, {"emergency": "ambulance_station"}, "AS", PRIVATE_AMBULANCE_WORDS)
     print("Fire stations:")
-    fire = stations(g, area, {"amenity": "fire_station"}, "FS")
+    fire = stations(g, area, {"amenity": "fire_station"}, "FS", NON_BASE_FIRE_WORDS)
     print(f"  {len(amb)} public ambulance stations, {len(fire)} fire stations inside the area")
     if len(fire) < MIN_FIRE_STATIONS:
         raise SystemExit(f"Fewer than {MIN_FIRE_STATIONS} fire stations; places.json left unchanged.")
@@ -265,7 +267,8 @@ def main() -> None:
         "hospitals": hospitals,
         "ambulance_stations": [] if args.skip_stations else
         stations(g, area, {"emergency": "ambulance_station"}, "AS", PRIVATE_AMBULANCE_WORDS),
-        "fire_stations": [] if args.skip_stations else stations(g, area, {"amenity": "fire_station"}, "FS"),
+        "fire_stations": [] if args.skip_stations else
+        stations(g, area, {"amenity": "fire_station"}, "FS", NON_BASE_FIRE_WORDS),
     }
     (OUT_DIR / "places.json").write_text(json.dumps(places, indent=2) + "\n")
     print(f"  hospitals at nodes {[h['node'] for h in hospitals]}")

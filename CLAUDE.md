@@ -131,7 +131,7 @@ Read DESIGN sections 3, 10, 11, 13, 15 and 17.
 
 - [x] **First, ask the user which city and area to use** (about 5 to 10 km across, with at least 3 hospitals). Save it in `config/area.json`.
 - [x] `scripts/fetch_roads.py`: download the drivable network with OSMnx; keep the largest strongly connected component; add edge speeds and travel times (default speeds where limits are missing); save `network.graphml`.
-- [x] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5). (Stations added later with `--stations-only`: 18 public fire stations; the only ambulance station is private and excluded, so BLS units are based at fire stations.)
+- [x] Also fetch hospital, ambulance-station and fire-station locations; snap each to its nearest network node; choose 3 well-spread hospitals; save `places.json`. Hospitals get fictional names (DESIGN 3.5). (Stations added later with `--stations-only`: 16 public fire stations (Marine Unit and Headquarters left out); the only ambulance station is private and excluded, so BLS units are based at fire stations.)
 - [x] Commit both files. Simulation code only reads them.
 
 ### 1.2 Roads module

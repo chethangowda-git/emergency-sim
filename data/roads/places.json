@@ -69,87 +69,73 @@
     },
     {
       "id": "FS7",
-      "name": "Boston Fire Department Marine Unit",
-      "node": "61344386",
-      "lat": 42.3664289,
-      "lon": -71.0501458
-    },
-    {
-      "id": "FS8",
       "name": "Boston Fire Department Engine 8, Ladder 1",
       "node": "61358619",
       "lat": 42.3658516,
       "lon": -71.0528554
     },
     {
-      "id": "FS9",
+      "id": "FS8",
       "name": "Station 2",
       "node": "61329844",
       "lat": 42.3629644,
       "lon": -71.0996101
     },
     {
-      "id": "FS10",
+      "id": "FS9",
       "name": "Boston Fire Department Engine 4, Ladder 24",
       "node": "1522224055",
       "lat": 42.3611274,
       "lon": -71.066002
     },
     {
-      "id": "FS11",
+      "id": "FS10",
       "name": "Boston Fire Department Engine 10",
       "node": "1545071753",
       "lat": 42.3546952,
       "lon": -71.0527076
     },
     {
-      "id": "FS12",
+      "id": "FS11",
       "name": "Boston Fire Department Engine 7, Ladder 17",
       "node": "7956193589",
       "lat": 42.3488239,
       "lon": -71.0715805
     },
     {
-      "id": "FS13",
+      "id": "FS12",
       "name": "Boston Fire Department Engine 33, Ladder 15",
       "node": "61354120",
       "lat": 42.3478794,
       "lon": -71.0855842
     },
     {
-      "id": "FS14",
+      "id": "FS13",
       "name": "Boston Fire Department Engine 22",
       "node": "61344392",
       "lat": 42.3405218,
       "lon": -71.0780724
     },
     {
-      "id": "FS15",
+      "id": "FS14",
       "name": "Boston Fire Department Engine 3",
       "node": "61343561",
       "lat": 42.3401352,
       "lon": -71.068444
     },
     {
-      "id": "FS16",
+      "id": "FS15",
       "name": "Boston Fire Department Engine 39, Ladder 18",
       "node": "61343515",
       "lat": 42.339221,
       "lon": -71.050379
     },
     {
-      "id": "FS17",
+      "id": "FS16",
       "name": "Boston Fire Department Engine 37, Ladder 26",
       "node": "61352784",
       "lat": 42.3377545,
       "lon": -71.095735
-    },
-    {
-      "id": "FS18",
-      "name": "Boston Fire Department Headquarters",
-      "node": "61363166",
-      "lat": 42.330925,
-      "lon": -71.069247
     }
   ]
 }

@@ -137,6 +137,7 @@ def test_real_bases_are_public_fire_stations_one_unit_type_per_station():
     fire = {s["id"]: s["node"] for s in places["fire_stations"]}
     hospitals = {h["id"]: h["node"] for h in places["hospitals"]}
     assert len(fire) >= 2 and places["ambulance_stations"] == []      # the private ambulance company is excluded
+    assert not any(w in s["name"] for s in places["fire_stations"] for w in ("Marine Unit", "Headquarters"))
     for seed in (1, 42):
         units = make_fleet(random.Random(seed), CFG, places, [])
         assert units == make_fleet(random.Random(seed), CFG, places, [])
