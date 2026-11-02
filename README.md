@@ -6,38 +6,39 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 
 ## Results
 
-**Rules only (no LLM) · real fire-station bases · 12 incidents per scenario · seeds 1 to 20** (`runs/evals/eval-004`). Every policy gets the same incidents, walk-ins and resources:
+**Rules only (no LLM) · real fire-station bases · 12 incidents per scenario · seeds 1 to 20** (`runs/evals/eval-007`). Every policy gets the same incidents, walk-ins and resources. This is the evaluation after the negotiation fixes in [docs/FINDINGS.md](docs/FINDINGS.md), run once with no tuning afterwards:
 
-> The multi-agent system got **61.1%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **18 of 20** seeds (1 tie, 1 loss).
+> The multi-agent system got **85.0%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **19 of 20** seeds (1 tie, no losses).
 
 | Policy | Criticals on time | Unserved criticals | Seeds won (W/T/L) | Report → care | Response time | Deadlines missed | Victims delivered |
 |---|---|---|---|---|---|---|---|
 | Greedy baseline | 39.6% ± 17.1 | 0.40 | – | 88.3 min | 48.3 min | 18.7 | 26.4 |
-| **Agents** | **61.1% ± 22.5** | 0.05 | 18 / 1 / 1 | 69.9 min | 30.8 min | 12.0 | **29.6** |
-| Agents, no negotiation | 71.8% ± 20.2 | 0 | 19 / 0 / 1 | 80.8 min | 35.8 min | 15.5 | 27.1 |
-| Agents, no Arbiter | 64.6% ± 24.5 | 0.15 | 17 / 2 / 1 | **69.0 min** | **29.8 min** | **11.7** | 29.4 |
-| Agents, rule hospitals | 69.5% ± 18.7 | 0 | 19 / 0 / 1 | 81.1 min | 34.3 min | 14.9 | 27.8 |
+| **Agents** | **85.0% ± 21.4** | 0.20 | **19 / 1 / 0** | 82.8 min | 33.2 min | 13.8 | **28.0** |
+| Agents, no negotiation | 70.8% ± 20.2 | 0 | 19 / 0 / 1 | 82.9 min | 36.8 min | 15.8 | 27.7 |
+| Agents, no Arbiter | 88.4% ± 19.7 | 0.15 | 19 / 1 / 0 | **80.1 min** | **29.6 min** | **13.3** | 27.6 |
+| Agents, rule hospitals | 69.4% ± 21.1 | 0 | 19 / 0 / 1 | 80.5 min | 33.6 min | 15.2 | 27.6 |
 
 Values are means over the 20 seeds; ± is the standard deviation across seeds. A seed counts as won when the policy gets strictly more criticals to care on time than the baseline.
 
-**Against the baseline**, the full agent system improves criticals on time by 54% (21.5 points), cuts report-to-care time by 21% (18 minutes), response time by 36% and missed deadlines by 36%, and delivers 12% more victims. Hospital overload minutes drop by 13%. ER load balance is slightly worse (56 vs 53 points), and about 51 agent actions per run are rejected, against none for the baseline (see below).
+**Against the baseline**, the full agent system more than doubles criticals on time (+45.4 points), cuts response time by 31% (15 minutes), report-to-care time by 6% and missed deadlines by 26%, and delivers 6% more victims. Hospital overload minutes drop by 9%. ER load balance is slightly worse (55 vs 53 points), and about 36 agent actions per run are rejected, against none for the baseline (see below).
 
-**What the ablations show:**
+**Gain breakdown on criticals on time:** greedy 39.6% → no negotiation 70.8% (+31.2) → rule hospitals 69.4% (−1.4) → no Arbiter 88.4% (+19.0) → full agents 85.0% (−3.5). The ablations are not strictly nested, so each step is the difference between two variants:
 
-- **Every agent variant beats the baseline on 17 to 19 of 20 seeds.** Coordination itself (Incident Assessment sizing the response, Dispatch planning units by urgency, admissions by earliest capable arrival) carries most of the gain: with negotiation switched off, the agents get 71.8% of criticals on time.
-- **The full system is the weakest variant on criticals, and the best or near best on everything else.** Negotiation (counters, holds, transfers and mutual aid, switched off together in DESIGN 11.3) gets victims to care 11 minutes sooner, misses 3.5 fewer deadlines and delivers 2.5 more victims than no negotiation, but costs 10.7 points on criticals. The hospital agents show the same trade against rule hospitals (8.5 points on criticals for 11 minutes faster care).
-- **The Arbiter costs 3.5 points on criticals in rules-only mode** (61.1% with it, 64.6% without), with about the same speed and throughput.
-- This is a change from the earlier evaluation with seeded random bases, where the full system was the best variant (70.8%). These seeds are not used for tuning (CLAUDE.md), so the agent rules were not adjusted to the new bases.
+- **Coordination itself** (Incident Assessment sizing the response, Dispatch planning units by urgency, admissions by earliest capable arrival) gives the first +31 points.
+- **Hospital agents with negotiation** give the next +19: holds, conditional offers, early release of ready patients for criticals, transfers, staff loans and mutual aid together. Without them (no negotiation, or rule hospitals) the agents stay near 70%.
+- **The Arbiter costs 3.5 points** in rules-only mode (85.0% with it, 88.4% without). This was not investigated, to avoid tuning on the evaluation seeds.
 
-**Where the agents don't win:** the full system ties seed 14 (57.1% each) and loses seed 9 (36.4% vs 45.5%). Results vary a lot between scenarios (standard deviation about 20 points), so the per-seed chart on the Evaluation page is worth a look alongside the means.
+**Where the agents don't win:** the full system ties seed 2 (18.8% each), the hardest scenario. Results vary a lot between scenarios (standard deviation about 20 points), so the per-seed chart on the Evaluation page is worth a look alongside the means.
 
-**Seed 42** (the reference scenario, not an evaluation seed), rules only, 12 incidents: greedy and agents both get 8 of 15 criticals on time (53.3%). The agents reach care sooner (75.4 vs 82.0 min), miss 12 deadlines instead of 17 and deliver 36 victims instead of 32.
+**The fixes, and what they cost** ([docs/FINDINGS.md](docs/FINDINGS.md)): before them, the full system got only 61.1% (it was the weakest agent variant). Diagnosed on development seeds 101 to 120, the cause was hospitals promising the same ready-for-release patient in several offers (and mostly to non-critical loads), so awards were declined and criticals lost their early reservation. Each ready patient is now promised once, early release is kept for loads with a critical, and a declined award goes straight to the next offer. Keeping early releases for criticals makes non-criticals wait longer: report-to-care time is 13 minutes longer than before the fixes, but still better than the baseline.
+
+**Seed 42** (the reference scenario, not an evaluation seed), rules only, 12 incidents: agents get 11 of 15 criticals on time (73.3%) against 8 of 15 (53.3%) for greedy, miss 13 deadlines instead of 17 and deliver 37 victims instead of 32. Their average report-to-care time is longer (92.8 vs 82.0 min) because they also deliver the victims greedy never reaches.
 
 **Caveats:**
 
 - **No LLM was involved.** Every agent decision in these numbers was made by the rules (fast path and defaults). DESIGN 11.2 asks for the agents to run 3 times per seed with a live, recorded LLM; that evaluation has not been run yet, and its results may differ.
-- Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). Tuning stopped there so the evaluation stays fair, but the seeds were not completely unseen.
-- About 51 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate, but the cost shows up as extra negotiation time.
+- Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). The negotiation fixes were diagnosed and checked only on seeds 101 to 120, then evaluated once on seeds 1 to 20.
+- About 36 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate.
 - The world is a simplified one (section [Assumptions](#assumptions-and-simplifications)): no traffic, no deterioration, approximate times and fictional hospital capacities.
 
 To reproduce: open the **Evaluation** page and press **Run evaluation** (about 30 seconds), or run `python -m cli eval --seeds 1-20`. Rules-only runs are deterministic, so you get exactly these numbers.

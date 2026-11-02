@@ -192,10 +192,10 @@ The simulator emits events into a JSONL log, including: `incident_reported`, `sc
 | Unit request pushback | Not used: Dispatch already plans with the extra units Incident Assessment asks for |
 | Units for non-criticals | After every incident has the right unit type, a free ALS may take a remaining non-critical need, but only if no critical anywhere still lacks an ALS |
 | Mutual aid trigger | Dispatch asks hospitals for a vehicle only for non-criticals within 60 minutes of their deadline (moving minors in early fills ER slots criticals need) |
-| Escalation triggers in Contract Net | Escalate at once when every offer for a victim arrives too late (trigger 1); when hospitals simply decline, negotiate up to 3 rounds and escalate only if a deadline is at risk (under 15 minutes of slack, trigger 2); a victim no capable hospital could reach in time is given the earliest offer (already the least-bad option) |
+| Escalation triggers in Contract Net | Escalate at once when every offer for a victim arrives too late (trigger 1); when hospitals simply decline, negotiate up to 3 rounds and escalate only if a deadline is at risk (under 15 minutes of slack, trigger 2); a victim no capable hospital could reach in time is given the earliest offer (already the least-bad option). A declined award (capacity taken since the offer) goes to the next valid offer of the same round, or escalates a critical with under 15 minutes of slack (trigger `award_declined`), or counts as a round; there is no separate retry wait |
 | Arbiter least-bad with no slot yet | Binding: the unit goes to the first capable hospital that has room, closest first, and the Arbiter may release a ready-for-release patient to make room; no renegotiation |
 | Unit-request threads | One thread per incident holds its unit request, Incident Assessment's updates and Dispatch's responses |
-| Same-minute capacity | A hospital declines an award ("capacity taken since my offer") if reservations already placed this minute leave too few slots |
+| Same-minute capacity | A hospital declines an award ("capacity taken since my offer") if reservations already placed this minute leave too few slots. Ready-for-release patients promised in an open offer are not counted for other offers (one promise per patient, lasting until the award could arrive, 3 minutes) |
 | Evaluation repeats | The baseline and rules-only agents are deterministic, so they run once per seed; the 3 repeats apply to live LLM runs |
 | Evaluation statistics | Repeats are averaged per seed first; spread is the standard deviation across seeds (and, live, the average across a seed's repeats); improvement uses the means; a win means strictly higher criticals on time, ties are reported apart; a seed with no criticals is left out of that metric |
 | Metrics population | Primary and secondary metrics count incident victims only; walk-ins add load |
@@ -281,7 +281,7 @@ It informs Incident Assessment of the expected delay.
 **When a request arrives and capacity is tight, it tries, in order:**
 
 1. Use free real capacity.
-2. Release patients who are `ready_for_release`.
+2. Release patients who are `ready_for_release`, **only for a request that includes a critical** (non-criticals use free capacity or wait), and **each ready patient is promised in at most one open offer**: until that offer's award arrives or its round ends (3 minutes at most), the patient cannot back another offer.
 3. Stabilize and transfer a transferable patient (routine transfer, section 5.5), using its own vehicle.
 4. Make a conditional offer (fewer patients, a later time, or "after my transfer completes").
 5. Decline, with a reason.
@@ -340,7 +340,8 @@ Dispatch -> IA: accept or decline the pushback
 1. Dispatch sends a `pre_alert` and one `admission_cfp` (call for proposals) to every capable hospital: victims (severity, care need), deadlines, ETA from the unit to each hospital, and whether any other hospital is reachable in time.
 2. Each hospital replies with an `admission_offer`: accept N, conditional (count, time, "after transfer"), or decline with a reason.
 3. Dispatch awards (`admission_award`), possibly splitting victims across hospitals, or counters (`admission_counter`). The awarded hospital places a firm reservation.
-4. Max 3 rounds. If no offer meets a deadline: escalate to the Arbiter.
+4. If the awarded hospital declines (its capacity was taken since its offer), Dispatch awards the next valid offer of the same round at once. If none is left, a critical with under 15 minutes of slack escalates to the Arbiter at once; otherwise the decline counts as a round and the next round starts.
+5. Max 3 rounds. If no offer meets a deadline: escalate to the Arbiter.
 
 ### 5.3 Mutual aid vehicles (Dispatch and hospitals)
 
@@ -416,6 +417,7 @@ The world does not pause during negotiation: deadlines keep running and units ke
 | Situation | Limit | Then |
 |---|---|---|
 | Rounds in one negotiation | 3 | Take the best offer, or escalate if a deadline is at risk |
+| Declined award | Counts as a round | Award the next valid offer of the same round; if none, a critical with under 15 minutes of slack escalates at once |
 | No reply | 1 round | Counts as a decline |
 | Reroutes per unit trip | 1 | Further changes only through the Arbiter |
 | Redirects of an ALS unit | Once per trip | The abandoned job goes to the front of the queue |

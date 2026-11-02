@@ -28,6 +28,7 @@ MAX_ROUNDS = 3
 RETRY_MINUTES = 5
 REPLAN_EVERY = 10
 AT_RISK_MINUTES = 15
+PROMISE_MINUTES = 3          # an offer's promised release lasts until its award could arrive (DESIGN 4.3)
 FREEING_EVENTS = ("unit_returning", "unit_at_base", "vehicle_lent", "scene_cleared")
 
 
@@ -82,6 +83,7 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.last_response: dict[str, dict] = {}
         self.minute_reserved: dict[str, int] = {}
         self.minute_released: set[str] = set()
+        self.promised: dict[str, dict[str, tuple[str, int]]] = {}   # hospital -> ready patient -> (thread, until)
         self.minute = -1
         self.t, self.view = 0, None
 
@@ -359,8 +361,13 @@ class AgentPolicy(HospitalProtocols, Policy):
 
     def _h_admission_admission_cfp(self, m: Message) -> None:
         agent = self.hospital_agents[m.recipient]
+        self._free_promises(m.thread_id, hospitals=(m.recipient,))  # a new round replaces this thread's offer
         offer = agent.respond_admission(HospitalScope(self.view, m.recipient),
-                                        AdmissionRequest.model_validate(m.proposed_action))
+                                        AdmissionRequest.model_validate(m.proposed_action),
+                                        promised=self._promised_elsewhere(m.recipient))
+        for a in offer.proposed_actions:
+            if a.action == "release_patient":
+                self.promised.setdefault(m.recipient, {})[a.victim] = (m.thread_id, self.t + PROMISE_MINUTES)
         self.decision(m.recipient, "admission_offer", offer.decided_by, offer.reason, accept=offer.accept,
                       thread=m.thread_id)
         self.send(m.recipient, "dispatch", "admission_offer", m.thread_id, m.round, incident_id=m.incident_id,
@@ -377,12 +384,21 @@ class AgentPolicy(HospitalProtocols, Policy):
         if set(load.offers) >= set(load.expected):
             self._award(load)
 
+    def _promised_elsewhere(self, hospital: str) -> frozenset[str]:
+        return frozenset(p for p, (_, until) in self.promised.get(hospital, {}).items() if until >= self.t)
+
+    def _free_promises(self, thread: str, hospitals=None, keep: str | None = None) -> None:
+        for h, promises in self.promised.items():
+            if (hospitals is None or h in hospitals) and h != keep:
+                for p in [p for p, (th, _) in promises.items() if th == thread]:
+                    del promises[p]
+
     def _load_for(self, thread: str) -> Load | None:
         unit = self.threads[thread].get("unit")
         load = self.loads.get(unit)
         return load if load is not None and load.thread == thread else None
 
-    def _award(self, load: Load) -> None:
+    def _award(self, load: Load, after_decline: bool = False) -> None:
         req = self._request(load)
         offers = [load.offers[h] for h in sorted(load.offers)]
         d = self.dispatch.award(DispatchScope(self.view), req, offers)
@@ -390,7 +406,11 @@ class AgentPolicy(HospitalProtocols, Policy):
                       awards=[a.model_dump() for a in d.awards], escalate=d.escalate)
         lead = load.victims[0]
         mine = next((a for a in d.awards if lead in a.victims), None)
+        self._free_promises(load.thread, keep=mine.hospital if mine else None)
         if mine is None:
+            if after_decline and self._at_risk(req, criticals_only=True):
+                self._escalate(load, "award_declined")
+                return
             self._no_award(load, req, escalate=lead in d.escalate)
             return
         if set(mine.victims) != set(load.victims):
@@ -416,10 +436,10 @@ class AgentPolicy(HospitalProtocols, Policy):
         else:
             self._retry(load, "no hospital accepted after 3 rounds")
 
-    def _at_risk(self, req: AdmissionRequest) -> bool:
+    def _at_risk(self, req: AdmissionRequest, criticals_only: bool = False) -> bool:
         earliest = self._earliest(req, DispatchScope(self.view).hospitals())
         return any(v.deadline is not None and earliest is not None and v.deadline - earliest < AT_RISK_MINUTES
-                   for v in req.victims)
+                   for v in req.victims if not criticals_only or v.severity == "critical")
 
     def _retry(self, load: Load, why: str) -> None:
         load.status, load.retry_at, load.round, load.hospital = "retry", self.t + RETRY_MINUTES, 1, None
@@ -448,9 +468,14 @@ class AgentPolicy(HospitalProtocols, Policy):
         load.status = "destination_set"
 
     def _h_admission_decline(self, m: Message) -> None:
+        """A declined award goes to the next valid offer of the same round, or escalates a critical with
+        under 15 minutes of slack; otherwise it counts as a round (DESIGN 5.2, 8)."""
         load = self._load_for(m.thread_id)
-        if load is not None and load.hospital == m.sender:
-            self._retry(load, m.reason)
+        if load is None or load.hospital != m.sender:
+            return
+        load.offers.pop(m.sender, None)
+        load.status, load.hospital = "awaiting_offers", None
+        self._award(load, after_decline=True)
 
     # ----- reroute after a broken reservation (DESIGN 5.7) -----
 

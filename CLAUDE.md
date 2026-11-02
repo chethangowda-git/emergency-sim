@@ -41,6 +41,7 @@ streamlit run dashboard/app.py               # the dashboard
 ```
 CLAUDE.md
 docs/DESIGN.md
+docs/FINDINGS.md     # negotiation diagnosis, fixes, before and after numbers
 launch.command  launch.bat  launch.sh
 requirements.txt  README.md  .gitignore
 config/
@@ -90,6 +91,8 @@ dashboard/
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
   evaluation_page.py   # the Evaluation page: settings, Run evaluation, results, open a seed in playback
   eval_views.py        # evaluation tables and Plotly charts
+tools/diagnostics/
+  negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
 tests/
 runs/                  # gitignored; one folder per run; evaluations in runs/evals/<eval-id>/
 ```

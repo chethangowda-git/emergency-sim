@@ -242,7 +242,8 @@ class VehicleRequest(BaseModel):
 
 class Escalation(BaseModel):
     victim: str
-    trigger: Literal["no_offer_in_time", "rounds_exhausted", "reroute_needed", "urgent_loan", "no_time"]
+    trigger: Literal["no_offer_in_time", "rounds_exhausted", "reroute_needed", "urgent_loan", "no_time",
+                     "award_declined"]
     unit: str | None = None
     origin_node: str
     ready_at: int

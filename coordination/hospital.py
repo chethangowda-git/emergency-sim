@@ -50,13 +50,16 @@ class HospitalAgent:
 
     # ----- admission -----
 
-    def respond_admission(self, scope: HospitalScope, req: AdmissionRequest) -> AdmissionOffer:
+    def respond_admission(self, scope: HospitalScope, req: AdmissionRequest,
+                          promised: frozenset[str] = frozenset()) -> AdmissionOffer:
+        """`promised`: ready-for-release patients this hospital already offered to release in another
+        open offer; each is promised once (DESIGN 4.3)."""
         mood = scope.mood()
         caps = scope.me["capabilities"]
         treatable = by_urgency([v for v in req.victims if v.care_need in caps])
         no_cap = [v.id for v in req.victims if v.care_need not in caps]
         base_decline = [Decline(victims=no_cap, reason="cannot treat this care need")] if no_cap else []
-        options = self._admission_options(scope, mood, treatable, base_decline)
+        options = self._admission_options(scope, mood, treatable, base_decline, promised)
         if not self.negotiate:
             options = {"accept_now": options["accept_now"]}
         ids = list(options)
@@ -80,15 +83,17 @@ class HospitalAgent:
         return AdmissionOffer(hospital=self.id, mood=mood, accept=list(accept), conditional=list(conditional),
                               decline=decline, proposed_actions=list(actions), decided_by="rule")
 
-    def _admission_options(self, scope, mood, treatable, base_decline) -> dict[str, AdmissionOffer]:
-        """The section 4.3 ladder: free capacity, release ready patients, after a transfer, protect criticals."""
+    def _admission_options(self, scope, mood, treatable, base_decline, promised=frozenset()) -> dict[str, AdmissionOffer]:
+        """The section 4.3 ladder: free capacity, release ready patients (only for a load with a critical, and
+        only patients not promised elsewhere), after a transfer, protect criticals."""
         ids = [v.id for v in treatable]
         full = "no free capacity now"
         mine = [h for h in scope.me["holds"] if h["victim"] in ids]
         now = fit_now(scope, treatable, extra_slots=len(mine))
         opts = {"accept_now": self._offer(mood, ids, now, full, base_decline)}
-        ready = sorted(scope.patients("ready_for_release"), key=lambda p: (p["ready_at"], p["id"]))
-        if ready and len(now) < len(ids):
+        ready = sorted((p for p in scope.patients("ready_for_release") if p["id"] not in promised),
+                       key=lambda p: (p["ready_at"], p["id"]))
+        if ready and len(now) < len(ids) and any(v.severity == "critical" for v in treatable):
             more = fit_now(scope, treatable, extra_slots=len(ready))
             if len(more) > len(now):
                 releases = [ProposedAction(action="release_patient", victim=p["id"], by=self.id)
@@ -186,7 +191,8 @@ class RuleHospital:
         self.id = hospital_id
         self.negotiate = False
 
-    def respond_admission(self, scope: HospitalScope, req: AdmissionRequest) -> AdmissionOffer:
+    def respond_admission(self, scope: HospitalScope, req: AdmissionRequest,
+                          promised: frozenset[str] = frozenset()) -> AdmissionOffer:
         treatable = by_urgency([v for v in req.victims if v.care_need in scope.me["capabilities"]])
         now = fit_now(scope, treatable)
         rest = [v.id for v in req.victims if v.id not in now]

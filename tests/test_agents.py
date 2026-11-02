@@ -217,6 +217,16 @@ def test_hospital_release_ladder_default_and_llm_choice():
     assert apply_ok(w, o.proposed_actions) == []
 
 
+def test_hospital_releases_early_only_for_a_load_with_a_critical():
+    w = tight_world()
+    scope = HospitalScope(w.snapshot(), "H1")
+    o = HospitalAgent("H1", OFF).respond_admission(scope, request(("V1", "serious", "trauma", 120)))
+    assert o.accept == [] and o.proposed_actions == []
+    promised = HospitalAgent("H1", OFF).respond_admission(scope, request(("V1", "critical", "trauma", 60)),
+                                                          promised=frozenset({"W01"}))
+    assert promised.accept == [] and promised.proposed_actions == []   # its only ready patient is promised elsewhere
+
+
 def test_hospital_protective_keeps_slots_for_criticals():
     # 14 slots, 12 taken: 2 free of 14 is 85.7% utilization (over 85%), with room for both requests.
     w = make_world([], hospitals=[hospital("H1", "C", slots=14, doctors=("trauma",) * 7, nurses=5)],

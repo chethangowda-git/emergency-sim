@@ -28,6 +28,7 @@ class HospitalProtocols:
         releases = [a for a in map(ProposedAction.model_validate, m.proposed_action["actions"])
                     if a.action != "release_patient" or a.victim in ready]
         self.minute_released |= {a.victim for a in releases if a.action == "release_patient"}
+        self._free_promises(m.thread_id, hospitals=(h,))  # used now, or the award is declined
         victims = m.proposed_action["victims"]
         if m.proposed_action["conditional"]:
             self.act(*releases)

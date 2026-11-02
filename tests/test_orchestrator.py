@@ -196,3 +196,62 @@ def test_replay_of_a_recorded_run_matches_exactly(tmp_path):
     replay = LLMClient("replay", replay_path=tmp_path / "llm_calls.jsonl")
     again = run_agents(busy_world(), agents(llm=replay), 150)
     assert json.dumps(again) == json.dumps(first)
+
+
+# ----- declined awards (DESIGN 5.2, 8) -----
+
+def declined_award_world(h2=True, deadline=None):
+    """H1 accepts I01-V1, then a walk-in takes its only slot before the award arrives."""
+    inc = incident("I01", "B", 0, [("critical", "trauma")])
+    if deadline is not None:
+        inc[1][0].deadline = deadline
+    hs = [hospital("H1", "C", caps=TRAUMA_GENERAL, slots=1)] + ([hospital("H2", "E", caps=TRAUMA_GENERAL, slots=1)]
+                                                                 if h2 else [])
+    return make_world([inc], hospitals=hs, units=[UnitSpec("ALS1", "ALS", "A", "A")],
+                      walk_ins=[walk_in("W01", "H1", 3, "serious", "trauma")])
+
+
+def test_a_declined_award_goes_to_the_next_offer_of_the_same_round():
+    evs = run_agents(declined_award_world(), agents(), 12)
+    declined = messages(evs, "decline")[0]
+    awards = messages(evs, "admission_award")
+    assert (declined["sender"], declined["reason"]) == ("H1", "capacity taken since my offer")
+    assert [(a["recipient"], a["round"], a["t"]) for a in awards] == [("H1", 1, 3), ("H2", 1, declined["t"] + 1)]
+    assert of_type(evs, "reservation_placed")[0]["hospital"] == "H2"
+    assert not any(e["type"] == "agent_decision" and e["kind"] == "retry" for e in evs)
+
+
+def test_a_declined_award_counts_as_a_round_or_escalates_a_critical_at_risk():
+    evs = run_agents(declined_award_world(h2=False), agents(), 12)
+    assert [m["round"] for m in messages(evs, "admission_counter")] == [2, 3]   # no 5-minute wait, no reset
+    assert messages(evs, "admission_counter")[0]["t"] == messages(evs, "decline")[0]["t"] + 1
+    evs = run_agents(declined_award_world(h2=False, deadline=20), agents(), 12)
+    esc = messages(evs, "escalation")
+    assert [e["reason"] for e in esc] == ["award_declined"]
+    assert esc[0]["t"] == messages(evs, "decline")[0]["t"] + 1 and not messages(evs, "admission_counter")
+
+
+def test_a_ready_patient_is_promised_in_one_open_offer_at_a_time():
+    from coordination.schemas import AdmissionRequest, RequestedVictim
+    w = make_world([], hospitals=[hospital("H1", "C", slots=2, doctors=("trauma", "trauma"), nurses=2)],
+                   walk_ins=[walk_in("W01", "H1", 0, "minor", "general"), walk_in("W02", "H1", 0, "serious", "trauma")])
+    p = agents()
+    events = w.start()
+    while w.t < 31:                                   # W01 is ready for release from minute 30
+        w.apply(p.decide(w.snapshot(), events))
+        events = w.step()
+    p.decide(w.snapshot(), events)
+
+    def cfp(victim):
+        th = p.open_thread("admission", unit="ALS1")
+        req = AdmissionRequest(incident="I01", origin_node="B", ready_at=35,
+                               victims=[RequestedVictim(id=victim, severity="critical", care_need="trauma", deadline=90)])
+        p._h_admission_admission_cfp(p.bus.send(p.t, "dispatch", "H1", "admission_cfp", th,
+                                                proposed_action=req.model_dump()))
+        offer = [e for e in p.log if e.get("msg_type") == "admission_offer"][-1]["proposed_action"]
+        return [a["victim"] for a in offer["proposed_actions"] if a["action"] == "release_patient"]
+
+    assert cfp("I01-V1") == ["W01"]
+    assert cfp("I02-V1") == []                        # W01 is already promised to the first offer
+    p.t += 4                                          # the first promise lapses unanswered
+    assert cfp("I03-V1") == ["W01"]
