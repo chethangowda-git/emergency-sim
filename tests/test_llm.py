@@ -110,3 +110,14 @@ def test_function_tools_are_read_only_and_scoped():
     assert [t.name for t in function_tools(HospitalScope(view, "H1"))] == ["get_my_hospital"]
     assert [t.name for t in function_tools(DispatchScope(view))] == ["list_units", "list_hospitals"]
     assert "free_slots" not in DispatchScope(view).hospitals()[0]
+
+
+def test_live_calls_record_token_usage():
+    usage = SimpleNamespace(requests=2, input_tokens=900, output_tokens=40)
+
+    def runner(agent, text):
+        return SimpleNamespace(final_output=Choice(option_id="b", reason="fine"), context_wrapper=SimpleNamespace(usage=usage))
+
+    client = LLMClient("live", model="m", runner=runner)
+    ask(client)
+    assert client.calls[-1]["usage"] == {"requests": 2, "input_tokens": 900, "output_tokens": 40}

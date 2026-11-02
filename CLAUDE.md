@@ -93,6 +93,7 @@ dashboard/
   eval_views.py        # evaluation tables and Plotly charts
 tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
+  llm_choices.py       # a recorded live run: where the LLM chose differently from the rule, and the effect
 tests/
 runs/                  # gitignored; one folder per run; evaluations in runs/evals/<eval-id>/
 ```

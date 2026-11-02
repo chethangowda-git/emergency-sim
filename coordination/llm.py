@@ -60,6 +60,14 @@ def load_llm_config(path: Path = LLM_CONFIG) -> dict:
     return json.loads(path.read_text()) if path.exists() else {"mode": "off", "model": None, "temperature": 0}
 
 
+def _usage_of(result) -> dict | None:
+    """Token counts of one live call (all model requests in it, tool rounds included), for cost reports."""
+    usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+    if usage is None:
+        return None
+    return {"requests": usage.requests, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+
+
 def _sdk_runner(agent, text: str):
     from agents import Runner as SDKRunner
 
@@ -103,6 +111,7 @@ class LLMClient:
         if self.mode == "off":
             return LLMResult(None, "llm_off")
         key = call_key(agent, purpose, payload)
+        self._usage = None
         raw, error = self._answer(agent, purpose, key, instructions, payload, schema, tools or [])
         output = None
         if error is None:
@@ -113,6 +122,8 @@ class LLMClient:
         self.calls.append({"seq": len(self.calls) + 1, "agent": agent, "purpose": purpose, "key": key,
                            "mode": self.mode, "model": self.model, "input": payload,
                            "output": output.model_dump() if output else raw, "error": error})
+        if self._usage is not None:
+            self.calls[-1]["usage"] = self._usage
         return LLMResult(output, error)
 
     def _answer(self, agent, purpose, key, instructions, payload, schema, tools) -> tuple[Any, str | None]:
@@ -137,6 +148,7 @@ class LLMClient:
             result = self._runner(sdk_agent, json.dumps(payload, sort_keys=True))
         except Exception as exc:  # network, quota or model errors all become a logged fallback
             return None, f"llm_error: {type(exc).__name__}: {str(exc)[:300]}"
+        self._usage = _usage_of(result)
         out = result.final_output
         return (out.model_dump() if isinstance(out, BaseModel) else out), None
 

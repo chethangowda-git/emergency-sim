@@ -12,7 +12,7 @@ from evaluation.summary import PRIMARY, claim
 from policies.registry import POLICY_NAMES
 
 AGENT_POLICIES = [p for p in POLICY_NAMES if p != "greedy"]
-CALLS_PER_RUN = 100  # DESIGN 12: roughly 60 to 150 LLM calls per agent run
+CALLS_PER_RUN = 250  # DESIGN 12.5: measured about 250 LLM calls per 12-incident agent run
 
 
 @st.cache_data(max_entries=16, show_spinner=False)
