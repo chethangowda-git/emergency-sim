@@ -34,14 +34,37 @@ Values are means over the 20 seeds; ± is the standard deviation across seeds. A
 
 **Seed 42** (the reference scenario, not an evaluation seed), rules only, 12 incidents: agents get 11 of 15 criticals on time (73.3%) against 8 of 15 (53.3%) for greedy, miss 13 deadlines instead of 17 and deliver 37 victims instead of 32. Their average report-to-care time is longer (92.8 vs 82.0 min) because they also deliver the victims greedy never reaches.
 
+### Live LLM evaluation
+
+**Full agents with `gpt-4o-mini-2024-07-18` · seeds 1 to 20 × 3 repeats · 12 incidents · real fire-station bases** (`runs/evals/eval-008`, recorded; its replay `eval-009` reproduces `results.jsonl` byte for byte). No agent logic was changed before or after the run.
+
+> **The LLM made the agents worse.** Live LLM agents got **68.6%** of criticals to care on time, against **85.0%** for the same agents with rules only and **39.6%** for greedy. They still beat greedy on 16 of 20 seeds, but lost to rules-only agents on 16 of 20.
+
+| | Greedy | Agents, rules only | Agents, live LLM |
+|---|---|---|---|
+| Criticals on time (mean over seeds) | 39.6% ± 17.1 | **85.0%** ± 21.4 | 68.6% ± 19.3 |
+| Spread across the 3 repeats (sd, per seed) | – | – | 3.8 points |
+| Unserved criticals | 0.40 | **0.20** | 1.45 |
+| W / T / L vs greedy | – | 19 / 1 / 0 | 16 / 2 / 2 |
+| W / T / L vs rules-only agents | – | – | 3 / 1 / 16 |
+| Report → care | 88.3 min | 82.8 min | **78.3 min** |
+| Response time | 48.3 min | 33.2 min | **25.9 min** |
+| Deadlines missed | 18.7 | **13.8** | 16.8 |
+| Victims delivered | 26.4 | **28.0** | 23.5 |
+| Decisions by rule / LLM / fallback | – | 100 / 0 / 0% | 74.2 / 25.1 / 0.7% |
+
+60 live runs, 0 failed, 0 API errors; 8,763 LLM calls, 6.83 M input and 0.43 M output tokens, about **$1.28** at $0.15 / $0.60 per million tokens; 56 minutes with 4 runs in parallel. The 0.7% fallbacks are model answers that did not fit the options (for example a Dispatch ranking that left out an incident); none came from API errors (DESIGN 12.7).
+
+**What the model did differently** (all 60 runs): in 87% of hospital admission offers (3,733 of 4,288) it chose the conditional "after transfer" offer, which the rule takes only when nothing else fits; it ranked incidents differently from the rule in 61% of Dispatch plans; it asked for extra units in 61% of incident assessments; and it chose "spare the specialist hospital" in 28% of awards. The live agents escalated to the Arbiter less than half as often (6.1 vs 13.6 escalations per run), delivered 4.5 fewer victims and left more criticals unserved. They respond faster, because extra units are sent. Why the conditional offers cost criticals has not been diagnosed yet; that work belongs on development seeds, not on these. See [docs/FINDINGS.md](docs/FINDINGS.md).
+
 **Caveats:**
 
-- **No LLM was involved.** Every agent decision in these numbers was made by the rules (fast path and defaults). DESIGN 11.2 asks for the agents to run 3 times per seed with a live, recorded LLM; that evaluation has not been run yet, and its results may differ.
+- The tables above the live section were made by the rules only (fast path and defaults); the live section shows the same agents with the LLM making the judgment calls. The headline numbers for this project are the rules-only ones; the LLM, as currently prompted, lowers them.
 - Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). The negotiation fixes were diagnosed and checked only on seeds 101 to 120, then evaluated once on seeds 1 to 20.
 - About 36 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate.
 - The world is a simplified one (section [Assumptions](#assumptions-and-simplifications)): no traffic, no deterioration, approximate times and fictional hospital capacities.
 
-To reproduce: open the **Evaluation** page and press **Run evaluation** (about 30 seconds), or run `python -m cli eval --seeds 1-20`. Rules-only runs are deterministic, so you get exactly these numbers.
+To reproduce: open the **Evaluation** page and press **Run evaluation** (about 30 seconds), or run `python -m cli eval --seeds 1-20`. Rules-only runs are deterministic, so you get exactly these numbers. The live evaluation replays exactly without a key: `python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3`.
 
 ## Launch
 

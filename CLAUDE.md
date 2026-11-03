@@ -94,6 +94,7 @@ dashboard/
 tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
   llm_choices.py       # a recorded live run: where the LLM chose differently from the rule, and the effect
+  live_vs_rules.py     # greedy vs rules-only agents vs live LLM agents, from two saved evaluations
 tests/
 runs/                  # gitignored; one folder per run; evaluations in runs/evals/<eval-id>/
 ```
@@ -232,7 +233,7 @@ Read DESIGN sections 5, 6, 7, 8, 9, 11, 12 and 3.11. The live LLM run comes last
 
 - [x] All tests pass with no network and no API key.
 - [x] Agents runs (rules only) complete for seeds 1 to 20 with no crashes.
-- [ ] A live agent run completes from the dashboard and its replay matches exactly (needs the user's model and key).
+- [x] A live agent run completes from the dashboard and its replay matches exactly (`seed42-agents-012`, replayed as `seed42-agents-013`).
 
 ---
 
@@ -268,7 +269,7 @@ Read DESIGN sections 1, 11 and 12. The evaluation seeds are 1 to 20; don't tune 
 
 - [x] All tests pass with no network.
 - [x] One click produces the final comparison (rules only; checked in a headless browser: 100 runs in about 30 seconds).
-- [ ] A live evaluation (agents 3 times per seed, DESIGN 11.2) and its replay (needs the user's model and key, like the Phase 3 live run).
+- [x] A live evaluation (agents 3 times per seed, DESIGN 11.2) and its replay: `eval-008` (gpt-4o-mini, 60 runs, 0 failed), replayed exactly as `eval-009`. Live LLM agents 68.6% vs rules-only 85.0% (docs/FINDINGS.md).
 
 ## Live runs (DESIGN 3.3, 12, 13.3)
 

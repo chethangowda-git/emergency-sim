@@ -101,6 +101,38 @@ What is left: the Arbiter now costs 3.5 points on criticals in rules-only mode (
 
 With the details visible, the model agrees with the rule on every "release then accept" (17 of 17). All 55 remaining differences are one pattern: the rule's default "accept now" accepts nobody (no free capacity), and the model offers "after transfer" instead, a conditional acceptance that the DESIGN 4.3 ladder places before a decline. In the counterfactual replays some of those choices cost a critical on this seed, and some Dispatch choices (a "spare specialist" award, extra units from Incident Assessment) did too. One live run on one seed is too noisy to judge the LLM: the live evaluation (3 repeats per seed, DESIGN 11.2) is the real test.
 
+## Live LLM evaluation: the LLM lowers the results
+
+**Setup.** Full agents with `gpt-4o-mini-2024-07-18` (temperature 0, hospital offers with their details), seeds 1 to 20 × 3 repeats, 12 incidents, real fire-station bases, 4 runs in parallel (`eval-008`). No agent logic was changed before or after. The safety rules of DESIGN 12.7 held: 60 runs, 0 API errors, 0 failed runs, so no rule fallback caused by an API error is in these numbers. 8,763 calls, 6.83 M input and 0.43 M output tokens, about $1.28, 56 minutes. The whole evaluation replays exactly (`eval-009`, identical `results.jsonl` and summary), and 3 randomly chosen runs rebuilt twice gave identical files.
+
+| | Greedy | Agents, rules only (`eval-007`) | Agents, live LLM (`eval-008`) |
+|---|---|---|---|
+| Criticals on time | 39.6% | **85.0%** | 68.6% (repeat spread 3.8 points) |
+| Unserved criticals | 0.40 | **0.20** | 1.45 |
+| W / T / L vs greedy | – | 19 / 1 / 0 | 16 / 2 / 2 |
+| W / T / L vs rules-only | – | – | 3 / 1 / 16 |
+| Report → care | 88.3 min | 82.8 min | **78.3 min** |
+| Response time | 48.3 min | 33.2 min | **25.9 min** |
+| Deadlines missed | 18.7 | **13.8** | 16.8 |
+| Victims delivered | 26.4 | **28.0** | 23.5 |
+| Escalations / Arbiter decisions per run | – | 13.6 / 39.3 | 6.1 / 17.2 |
+| Decided by rule / LLM / fallback | – | 100 / 0 / 0% | 74.2 / 25.1 / 0.7% |
+
+The live agents still beat greedy clearly, and they reach care and respond faster. But they get 16.4 points fewer criticals to care on time than the same agents with rules only, and lose to them on 16 of 20 seeds. The spread across repeats is small (3.8 points), so this is not noise from a few unlucky runs.
+
+**What the model chose** (all 60 runs):
+
+| Decision | Model's choice |
+|---|---|
+| Hospital admission offer (4,288) | "after transfer" 87%, "release then accept" 12%, "accept now" 1% |
+| Dispatch unit plan with a ranking (2,597) | a different ranking from the rule 61% |
+| Incident assessment (720) | extra units 61% |
+| Dispatch award (988) | earliest 71%, spare the specialist 28%, one hospital 1% |
+
+The dominant pattern is the hospitals' conditional "after my transfer" offer, which the DESIGN 4.3 ladder ranks above a decline but which the rule picks only when nothing else fits. With it, a load waits for a transfer that may not happen in time, and offers that are not declines also delay escalation (escalations fell from 13.6 to 6.1 per run). That is a hypothesis consistent with the numbers, not a diagnosis: the counterfactual tool (`tools/diagnostics/llm_choices.py`) on development-seed live runs would test it, at about $0.03 per run.
+
+**Status:** the project's headline results are the rules-only ones. The LLM, as currently prompted and with these options, makes the agents worse on the primary metric. Nothing was tuned on seeds 1 to 20 after seeing this.
+
 ## Reproduce
 
 ```bash
@@ -108,4 +140,6 @@ python -m tools.diagnostics.negotiation_gap --seeds 101-120 --out /tmp/gap   # t
 python -m cli eval --seeds 101-120 --policies agents agents-nonego             # development check
 python -m cli eval --seeds 1-20                                                # the final evaluation
 python -m tools.diagnostics.llm_choices runs/seed42-agents-012                  # LLM vs rule, with counterfactuals
+python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3   # the live evaluation, replayed
+python -m tools.diagnostics.live_vs_rules --live eval-008 --rules eval-007        # the live vs rules-only table
 ```
