@@ -69,7 +69,7 @@ class HospitalAgent:
         elif len(options["accept_now"].accept) == len(treatable) and mood != "protective":
             ids, default = ["accept_now"], "accept_now"
         payload = {"t": scope.t, "mood": mood, "request": req.model_dump(),
-                   "options": {k: o.model_dump(exclude={"decided_by"}) for k, o in options.items()},
+                   "option_details": {k: o.model_dump(exclude={"decided_by"}) for k, o in options.items()},
                    "ready_for_release": len(scope.patients("ready_for_release")),
                    "transferable": len(scope.patients("transferable"))}
         picked = pick(self.llm, self.id, "admission", prompts.HOSPITAL, payload, ids, default,

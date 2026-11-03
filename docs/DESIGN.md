@@ -494,7 +494,7 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 2. **Record and replay:** every LLM call (agent, input, output) is written to a run log. Replay mode reads answers from the log instead of calling the API, so any run can be reproduced exactly, including for the dashboard demo.
 3. Every agent output must validate against a Pydantic schema. If it does not, a fallback rule decides, and the fallback is logged.
 4. Rules compute all numbers; the LLM only makes judgments.
-5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Measured scale (12 incidents, `gpt-4o-mini-2024-07-18`): about 250 LLM calls per run (seed 42: 243 calls, of which 171 hospital admission offers, 47 Dispatch unit plans, 12 incident assessments, 11 awards; about 141,000 input and 10,500 output tokens; about 6 minutes). Each live call records its token usage in `llm_calls.jsonl`.
+5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Measured scale (12 incidents, `gpt-4o-mini-2024-07-18`): about 150 to 250 LLM calls per run (seed 42: 155 calls, of which 74 hospital admission offers, 47 Dispatch unit plans, 19 awards and 12 incident assessments; about 132,000 input and 8,400 output tokens; about 4 minutes. Before hospital offers carried their details, the same seed took 243 calls). Each live call records its token usage in `llm_calls.jsonl`.
 6. A live run's speed, pauses and one-minute steps never change its outcome: pacing only adds waiting between minutes. A finished live run saves exactly the files a headless run of the same seed, policy and placed incidents saves.
 
 ---

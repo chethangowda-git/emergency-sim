@@ -17,6 +17,8 @@ class Picked:
 def pick(llm: LLMClient, agent: str, purpose: str, instructions: str, payload: dict,
          options: list[str], default: str, default_reason: str) -> Picked:
     """Fast path when only one option fits; otherwise ask the LLM, falling back to `default`."""
+    if "options" in payload:
+        raise ValueError("payload key 'options' is reserved for the option ids; put option details elsewhere")
     if len(options) == 1:
         return Picked(options[0], "rule", default_reason)
     if not llm.enabled:

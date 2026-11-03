@@ -217,6 +217,27 @@ def test_hospital_release_ladder_default_and_llm_choice():
     assert apply_ok(w, o.proposed_actions) == []
 
 
+def test_hospital_admission_llm_input_describes_every_option():
+    w = tight_world()
+    llm = fake({"option_id": "release_then_accept", "reason": "free W01 for the critical"})
+    HospitalAgent("H1", llm).respond_admission(HospitalScope(w.snapshot(), "H1"), request(("V1", "critical", "trauma", 60)))
+    sent = llm.calls[-1]["input"]
+    assert sent["options"] == ["accept_now", "release_then_accept"]
+    details = sent["option_details"]
+    assert set(details) == set(sent["options"])
+    assert details["accept_now"]["accept"] == [] and details["accept_now"]["decline"][0]["victims"] == ["V1"]
+    assert details["release_then_accept"]["accept"] == ["V1"]
+    assert details["release_then_accept"]["proposed_actions"][0]["action"] == "release_patient"
+
+
+def test_pick_refuses_a_payload_that_would_hide_option_details():
+    import pytest
+
+    from coordination.base import pick
+    with pytest.raises(ValueError, match="reserved"):
+        pick(fake({"option_id": "a", "reason": "r"}), "H1", "admission", "", {"options": {"a": {}}}, ["a", "b"], "a", "r")
+
+
 def test_hospital_releases_early_only_for_a_load_with_a_critical():
     w = tight_world()
     scope = HospitalScope(w.snapshot(), "H1")

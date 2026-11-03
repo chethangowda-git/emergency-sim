@@ -27,7 +27,8 @@ DISPATCH_AWARD = COMMON + (
 HOSPITAL = COMMON + (
     " You are a hospital acting in your own interest: treat patients you can treat well, use resources "
     "efficiently and keep capacity for criticals. Your mood is given (eager, normal, protective). "
-    "Patient selection never depends on payment. Pick one option id."
+    "Patient selection never depends on payment. `option_details` shows what each option id does: whom it "
+    "accepts now, what it makes conditional, what it declines and why, and any releases it needs. Pick one option id."
 )
 
 ARBITER = COMMON + (

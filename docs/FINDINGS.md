@@ -84,10 +84,28 @@ What the fixes cost: with early releases kept for criticals, non-critical victim
 
 What is left: the Arbiter now costs 3.5 points on criticals in rules-only mode (85.0% with it, 88.4% without). This was not investigated, to avoid tuning on the evaluation seeds; a next diagnosis would again use development seeds.
 
+## Bug: hospital offers reached the LLM without their details
+
+**Found** in the first live LLM run through the dashboard (seed 42, `runs/seed42-agents-010`) with `tools/diagnostics/llm_choices.py`. The hospital agent put each admission option's details (whom it accepts, conditions, declines, releases) under the payload key `options`; the shared `pick()` then replaced that key with the list of option ids. So for hospital admission offers the model saw only names such as `accept_now` and `release_then_accept`. In 106 of 171 admission calls it chose differently from the rule, almost always "accept now", with reasons like "accepting now allows immediate treatment" for an option that, with no free capacity, accepts nobody. Dispatch awards and Arbiter rulings were not affected (their details travel as `plans`, `offers` and `candidates`).
+
+**Fix:** the details travel as `option_details`, the hospital prompt says what they contain, and `pick()` refuses a payload that uses the reserved `options` key. Tests check that the admission input carries every option's details. Rules-only results are unchanged (rules never read the payload); live runs recorded before the fix no longer replay against the new code.
+
+**Seed 42, 12 incidents, `gpt-4o-mini-2024-07-18`, both runs through the live dashboard path, both replayed byte-identically:**
+
+| Run | Criticals on time | Unserved | Deadlines missed | Delivered | LLM calls | Admission calls differing from the rule | Decided by rule / LLM / fallback |
+|---|---|---|---|---|---|---|---|
+| Greedy | 8/15 | 0 | 17 | 32 | – | – | – |
+| Agents, rules only | 11/15 | 0 | 13 | 37 | – | – | 100 / 0 / 0% |
+| Live LLM, before the fix (`seed42-agents-010`) | 11/15 | 0 | 13 | 31 | 243 | 106 of 171 | 72.1 / 27.8 / 0.1% |
+| Live LLM, after the fix (`seed42-agents-012`) | 9/15 | 2 | 17 | 30 | 155 | 55 of 74 | 76.5 / 22.5 / 1.1% |
+
+With the details visible, the model agrees with the rule on every "release then accept" (17 of 17). All 55 remaining differences are one pattern: the rule's default "accept now" accepts nobody (no free capacity), and the model offers "after transfer" instead, a conditional acceptance that the DESIGN 4.3 ladder places before a decline. In the counterfactual replays some of those choices cost a critical on this seed, and some Dispatch choices (a "spare specialist" award, extra units from Incident Assessment) did too. One live run on one seed is too noisy to judge the LLM: the live evaluation (3 repeats per seed, DESIGN 11.2) is the real test.
+
 ## Reproduce
 
 ```bash
 python -m tools.diagnostics.negotiation_gap --seeds 101-120 --out /tmp/gap   # the tables above (current code)
 python -m cli eval --seeds 101-120 --policies agents agents-nonego             # development check
 python -m cli eval --seeds 1-20                                                # the final evaluation
+python -m tools.diagnostics.llm_choices runs/seed42-agents-012                  # LLM vs rule, with counterfactuals
 ```
