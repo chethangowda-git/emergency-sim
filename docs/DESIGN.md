@@ -496,6 +496,7 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 4. Rules compute all numbers; the LLM only makes judgments.
 5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Measured scale (12 incidents, `gpt-4o-mini-2024-07-18`): about 150 to 250 LLM calls per run (seed 42: 155 calls, of which 74 hospital admission offers, 47 Dispatch unit plans, 19 awards and 12 incident assessments; about 132,000 input and 8,400 output tokens; about 4 minutes. Before hospital offers carried their details, the same seed took 243 calls). Each live call records its token usage in `llm_calls.jsonl`.
 6. A live run's speed, pauses and one-minute steps never change its outcome: pacing only adds waiting between minutes. A finished live run saves exactly the files a headless run of the same seed, policy and placed incidents saves.
+7. API errors never become silent rule fallbacks in reported results. A live call retries rate limits (honouring `Retry-After`), connection errors, timeouts and server errors with exponential backoff and jitter; quota and billing errors are not retried. In an evaluation, a run with any remaining API error (`llm_error`) is run again, up to 3 attempts in all; if it still fails it is listed in `failed.jsonl` and in the summary, and left out of the results (a replay leaves it out too). Agents SDK tracing is off; `llm_calls.jsonl` is the record. Evaluation runs may go in parallel processes; `results.jsonl` is written in plan order.
 
 ---
 

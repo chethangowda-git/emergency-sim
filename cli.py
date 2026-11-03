@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--llm", choices=("off", "live", "replay"), default="off")
     e.add_argument("--repeats", type=int, default=LIVE_REPEATS, help="agent runs per seed (live and replay only)")
     e.add_argument("--from", dest="replay_from", default=None, help="evaluation id to replay, such as eval-001")
+    e.add_argument("--workers", type=int, default=None, help="parallel processes (default 4 for live, else 1)")
     args = parser.parse_args(argv)
     if args.command == "eval":
         return evaluate(args)
@@ -51,7 +52,9 @@ def main(argv: list[str] | None = None) -> None:
 def evaluate(args) -> None:
     settings = EvalSettings(seeds=args.seeds, policies=tuple(args.policies), llm_mode=args.llm,
                             repeats=args.repeats, replay_from=args.replay_from)
-    out = run_evaluation(settings, lambda done, total, label: print(f"[{done}/{total}] {label}", flush=True))
+    workers = args.workers or (4 if args.llm == "live" else 1)
+    out = run_evaluation(settings, lambda done, total, label: print(f"[{done}/{total}] {label}", flush=True),
+                         workers=workers)
     summary = json.loads((out / "summary.json").read_text())
     print(f"Saved {out}")
     for policy in summary["policies"]:
@@ -59,6 +62,8 @@ def evaluate(args) -> None:
         wins = summary["versus_baseline"].get(policy, {}).get("wins")
         tail = f", wins {wins['wins']}/{wins['seeds']}" if wins else ""
         print(f"  {policy}: criticals on time {m['mean']}% (sd {m['sd']}){tail}")
+    for f in summary.get("failed_runs", []):
+        print(f"  FAILED {f['run_id']} after {f['attempts']} attempts: {f['first_error']}")
     if claim(summary):
         print(claim(summary))
 

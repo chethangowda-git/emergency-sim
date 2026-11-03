@@ -4,10 +4,18 @@ Each run is saved light (config, scenario, metrics, LLM calls) under `runs/evals
 `results.jsonl` holds one row per run and `summary.json`, written last, marks the evaluation done.
 The baseline and rules-only agents are deterministic, so they run once per seed; repeats only
 apply to live LLM runs (and to replaying them).
+
+A live run with any API error (`llm_error`) is not accepted: it is run again, up to RUN_ATTEMPTS
+times in all, and if it still fails it is listed in `failed.jsonl` and left out of the results, so
+rule fallbacks caused by API errors never mix into LLM results. Runs can go in parallel worker
+processes; `results.jsonl` is always written in plan order.
 """
 from __future__ import annotations
 
 import json
+import multiprocessing
+import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
@@ -15,12 +23,13 @@ from typing import Callable
 from coordination.llm import LLMClient
 from evaluation.summary import BASELINE, flatten, summarize
 from policies.registry import POLICY_NAMES, make_llm
-from sim.config import SimConfig
+from sim.config import SimConfig, default_config
 from sim.roads import RoadNetwork
-from sim.runner import RUNS_DIR, run, write_json, write_jsonl
+from sim.runner import RUNS_DIR, load_roads, run, write_json, write_jsonl
 
 EVALS_DIR = RUNS_DIR / "evals"
 LIVE_REPEATS = 3
+RUN_ATTEMPTS = 3      # a run with an API error is retried twice before it is marked failed
 EvalProgress = Callable[[int, int, str], None]
 LLMFactory = Callable[[int, str, int], LLMClient]
 
@@ -77,31 +86,100 @@ def llm_for(settings: EvalSettings, evals_dir: Path, seed: int, policy: str, rep
     return make_llm(settings.llm_mode)
 
 
+def api_errors(llm: LLMClient | None) -> list[str]:
+    return [c["error"] for c in (llm.calls if llm else []) if (c["error"] or "").startswith("llm_error")]
+
+
+def run_one(settings: EvalSettings, evals_dir: Path, runs_dir: Path, job: tuple[int, str, int], cfg, roads, places,
+            llm_factory: LLMFactory | None = None) -> dict:
+    """One evaluated run, retried while it has API errors: {"row", "scenario"} or {"failed"}."""
+    seed, policy, repeat = job
+    run_id = run_id_for(seed, policy, repeat)
+    for attempt in range(1, RUN_ATTEMPTS + 1):
+        shutil.rmtree(runs_dir / run_id, ignore_errors=True)
+        llm = llm_for(settings, evals_dir, seed, policy, repeat, llm_factory)
+        folder = run(seed, policy, runs_dir=runs_dir, cfg=cfg, roads=roads, places=places, llm=llm, light=True,
+                     run_id=run_id)
+        errors = api_errors(llm) if settings.llm_mode == "live" else []
+        if not errors:
+            metrics = json.loads((folder / "metrics.json").read_text())
+            return {"row": {"seed": seed, "policy": policy, "repeat": repeat, "run_id": run_id, **flatten(metrics)},
+                    "scenario": (folder / "scenario.json").read_bytes(), "attempts": attempt}
+    kept = runs_dir / "failed" / run_id
+    shutil.rmtree(kept, ignore_errors=True)
+    kept.parent.mkdir(exist_ok=True)
+    shutil.move(str(folder), kept)
+    return {"failed": {"seed": seed, "policy": policy, "repeat": repeat, "run_id": run_id, "attempts": RUN_ATTEMPTS,
+                       "api_errors": len(errors), "first_error": errors[0][:300]}}
+
+
+_WORKER: dict = {}
+
+
+def _init_worker(cfg, roads, places) -> None:
+    _WORKER.update(cfg=cfg, places=places, roads=roads or load_roads(cfg or default_config()))
+
+
+def _work(settings, evals_dir, runs_dir, job) -> dict:
+    return run_one(settings, evals_dir, runs_dir, job, _WORKER["cfg"], _WORKER["roads"], _WORKER["places"])
+
+
+def label(job: tuple[int, str, int]) -> str:
+    seed, policy, repeat = job
+    return f"seed {seed} · {policy}" + (f" · repeat {repeat}" if repeat > 1 else "")
+
+
 def run_evaluation(settings: EvalSettings, progress_cb: EvalProgress | None = None, *,
                    evals_dir: Path = EVALS_DIR, cfg: SimConfig | None = None, roads: RoadNetwork | None = None,
-                   places: dict | None = None, llm_factory: LLMFactory | None = None) -> Path:
+                   places: dict | None = None, llm_factory: LLMFactory | None = None, workers: int = 1) -> Path:
+    if workers > 1 and llm_factory is not None:
+        raise ValueError("an LLM factory only works in one process (workers=1)")
     evals_dir.mkdir(parents=True, exist_ok=True)
     eval_id = next_eval_id(evals_dir)
     out = evals_dir / eval_id
     runs_dir = out / "runs"
     runs_dir.mkdir(parents=True)
     write_json(out / "settings.json", {"eval_id": eval_id, **asdict(settings)})
-    plan = settings.plan()
-    rows, scenarios = [], {}
-    for done, (seed, policy, repeat) in enumerate(plan, 1):
-        llm = llm_for(settings, evals_dir, seed, policy, repeat, llm_factory)
-        folder = run(seed, policy, runs_dir=runs_dir, cfg=cfg, roads=roads, places=places, llm=llm, light=True,
-                     run_id=run_id_for(seed, policy, repeat))
-        scenario = (folder / "scenario.json").read_bytes()
-        if scenarios.setdefault(seed, scenario) != scenario:
-            raise RuntimeError(f"seed {seed}: {policy} ran a different scenario than the baseline")
-        metrics = json.loads((folder / "metrics.json").read_text())
-        rows.append({"seed": seed, "policy": policy, "repeat": repeat, "run_id": folder.name, **flatten(metrics)})
-        if progress_cb:
-            progress_cb(done, len(plan), f"seed {seed} · {policy}" + (f" · repeat {repeat}" if repeat > 1 else ""))
+    skipped = failed_in(evals_dir, settings.replay_from) if settings.llm_mode == "replay" else set()
+    plan = [job for job in settings.plan() if run_id_for(*job) not in skipped]
+    results: dict[tuple, dict] = {}
+    if workers <= 1:
+        roads = roads or load_roads(cfg or default_config())
+        for done, job in enumerate(plan, 1):
+            results[job] = run_one(settings, evals_dir, runs_dir, job, cfg, roads, places, llm_factory)
+            if progress_cb:
+                progress_cb(done, len(plan), label(job))
+    else:
+        ctx = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(workers, mp_context=ctx, initializer=_init_worker,
+                                 initargs=(cfg, roads, places)) as pool:
+            futures = {pool.submit(_work, settings, evals_dir, runs_dir, job): job for job in plan}
+            for done, fut in enumerate(as_completed(futures), 1):
+                results[futures[fut]] = fut.result()
+                if progress_cb:
+                    progress_cb(done, len(plan), label(futures[fut]))
+    rows, failed, scenarios = [], [], {}
+    for job in plan:                                  # plan order, whatever order the runs finished in
+        r = results[job]
+        if "failed" in r:
+            failed.append(r["failed"])
+            continue
+        if scenarios.setdefault(job[0], r["scenario"]) != r["scenario"]:
+            raise RuntimeError(f"seed {job[0]}: {job[1]} ran a different scenario than the baseline")
+        rows.append(r["row"])
     write_jsonl(out / "results.jsonl", rows)
-    write_json(out / "summary.json", summarize(rows))
+    if failed:
+        write_jsonl(out / "failed.jsonl", failed)
+    write_json(out / "summary.json", {**summarize(rows), "failed_runs": failed})
     return out
+
+
+def failed_in(evals_dir: Path, eval_id: str | None) -> set[str]:
+    """Runs a recorded evaluation marked failed: a replay leaves them out too."""
+    path = evals_dir / (eval_id or "") / "failed.jsonl"
+    if not eval_id or not path.exists():
+        return set()
+    return {json.loads(line)["run_id"] for line in path.read_text().splitlines() if line}
 
 
 def list_evaluations(evals_dir: Path = EVALS_DIR) -> list[str]:

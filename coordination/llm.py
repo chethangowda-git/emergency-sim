@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -28,6 +30,10 @@ MODES = ("off", "fake", "replay", "live")
 
 FakeFn = Callable[[str, str, dict], Any]
 Runner = Callable[[Any, str], Any]
+
+RETRY_ATTEMPTS = 6        # per call, after the SDK's own quick retries
+RETRY_MAX_SECONDS = 300   # total time one call may spend waiting
+BACKOFF_FIRST = 2.0       # seconds; doubles each attempt when the server gives no Retry-After
 
 
 @dataclass
@@ -60,12 +66,41 @@ def load_llm_config(path: Path = LLM_CONFIG) -> dict:
     return json.loads(path.read_text()) if path.exists() else {"mode": "off", "model": None, "temperature": 0}
 
 
+def disable_tracing() -> None:
+    """No Agents SDK traces are uploaded: every call is already recorded in llm_calls.jsonl."""
+    os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
+    from agents import set_tracing_disabled
+
+    set_tracing_disabled(True)
+
+
 def _usage_of(result) -> dict | None:
     """Token counts of one live call (all model requests in it, tool rounds included), for cost reports."""
     usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
     if usage is None:
         return None
     return {"requests": usage.requests, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+
+
+def retry_wait(exc: Exception, attempt: int, jitter: float) -> float | None:
+    """Seconds to wait before retrying a failed live call, or None if it must not be retried:
+    429 rate limits (honouring Retry-After), connection errors, timeouts and 5xx server errors
+    are transient; quota and billing errors need the user's action."""
+    import openai
+
+    if isinstance(exc, openai.RateLimitError):
+        code = (getattr(exc, "body", None) or {}).get("code") if isinstance(getattr(exc, "body", None), dict) else None
+        if code == "insufficient_quota" or "insufficient_quota" in str(exc):
+            return None
+    elif not isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError)):
+        return None
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    try:
+        after = float(headers.get("retry-after"))
+    except (TypeError, ValueError):
+        after = None
+    base = after if after is not None and after >= 0 else BACKOFF_FIRST * 2 ** (attempt - 1)
+    return base + jitter
 
 
 def _sdk_runner(agent, text: str):
@@ -77,7 +112,7 @@ def _sdk_runner(agent, text: str):
 class LLMClient:
     def __init__(self, mode: str = "off", model: str | None = None, *, fake: FakeFn | None = None,
                  replay_path: Path | None = None, runner: Runner | None = None,
-                 temperature: float | None = 0.0) -> None:
+                 temperature: float | None = 0.0, sleep: Callable[[float], None] = time.sleep) -> None:
         if mode not in MODES:
             raise ValueError(f"unknown LLM mode {mode!r}")
         if mode == "fake" and fake is None:
@@ -87,7 +122,10 @@ class LLMClient:
         if mode == "live" and runner is None and not os.environ.get("OPENAI_API_KEY"):
             raise ValueError("live mode needs OPENAI_API_KEY")
         self.mode, self.model, self.temperature = mode, model, temperature
-        self._fake, self._runner = fake, runner or _sdk_runner
+        self._fake, self._runner, self._sleep = fake, runner or _sdk_runner, sleep
+        self._jitter = random.Random()  # only spreads retry waits; never touches simulation state
+        if mode == "live":
+            disable_tracing()
         self._replay = self._load_replay(replay_path) if mode == "replay" else {}
         self.calls: list[dict] = []
 
@@ -144,10 +182,17 @@ class LLMClient:
         settings = ModelSettings() if self.temperature is None else ModelSettings(temperature=self.temperature)
         sdk_agent = Agent(name=agent, instructions=instructions, model=self.model, tools=tools,
                           model_settings=settings, output_type=schema)
-        try:
-            result = self._runner(sdk_agent, json.dumps(payload, sort_keys=True))
-        except Exception as exc:  # network, quota or model errors all become a logged fallback
-            return None, f"llm_error: {type(exc).__name__}: {str(exc)[:300]}"
+        text, waited = json.dumps(payload, sort_keys=True), 0.0
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            try:
+                result = self._runner(sdk_agent, text)
+                break
+            except Exception as exc:  # what cannot be retried becomes a logged llm_error
+                wait = retry_wait(exc, attempt, self._jitter.uniform(0, 1))
+                if wait is None or attempt == RETRY_ATTEMPTS or waited + wait > RETRY_MAX_SECONDS:
+                    return None, f"llm_error: {type(exc).__name__}: {str(exc)[:300]}"
+                self._sleep(wait)
+                waited += wait
         self._usage = _usage_of(result)
         out = result.final_output
         return (out.model_dump() if isinstance(out, BaseModel) else out), None

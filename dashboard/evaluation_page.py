@@ -73,7 +73,7 @@ def settings_sidebar(roads) -> None:
 def start(settings: ev.EvalSettings, roads) -> None:
     bar = st.sidebar.progress(0.0, text="Starting the evaluation ...")
     out = ev.run_evaluation(settings, lambda d, n, what: bar.progress(d / n, text=f"Run {d}/{n}: {what}"),
-                            roads=roads)
+                            roads=roads, workers=4 if settings.llm_mode == "live" else 1)
     bar.empty()
     st.session_state.eval_id = out.name
 
@@ -86,6 +86,10 @@ def results(eval_id: str, playback_page) -> None:
     sentence = claim(summary)
     if sentence:
         st.success(sentence)
+    failed = summary.get("failed_runs") or []
+    if failed:
+        st.warning(f"{len(failed)} run(s) kept hitting API errors and are left out: "
+                   + ", ".join(f["run_id"] for f in failed))
     variants = list(summary["versus_baseline"])
     if not variants:
         baseline_only(data, playback_page)

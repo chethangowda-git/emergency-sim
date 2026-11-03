@@ -139,3 +139,56 @@ def test_eval_tables_and_charts_read_a_saved_summary():
     assert list(bars.data[0].marker.color) == [eval_views.MUTED, eval_views.ACCENT["dark"]]
     dumbbell = eval_views.per_seed_dumbbell(summary, "agents", "light")
     assert list(dumbbell.data[2].y) == ["Seed 1", "Seed 2", "Seed 4"]
+
+
+# ----- live safety: API errors, retries, parallel runs -----
+
+def flaky_live(fail_attempts: int):
+    """A live client whose first `fail_attempts` runs each hit an API error on their first call."""
+    attempts = {"n": 0}
+
+    def factory(seed, policy, repeat):
+        attempts["n"] += 1
+        broken = attempts["n"] <= fail_attempts
+        state = {"first": True}
+
+        def runner(agent, text):
+            if broken and state["first"]:
+                state["first"] = False
+                raise ValueError("quota or billing problem")      # not retried by the wrapper
+            from types import SimpleNamespace
+            payload = json.loads(text)
+            return SimpleNamespace(final_output=last_option(agent, None, payload) if "options" in payload
+                                   else None)
+        return LLMClient("live", model="m", runner=runner)
+    return factory, attempts
+
+
+def test_a_run_with_an_api_error_is_retried_and_accepted_only_without_errors(tmp_path):
+    factory, attempts = flaky_live(fail_attempts=1)
+    out = evaluate(tmp_path, ev.EvalSettings(seeds=(5,), policies=("agents",), llm_mode="live", repeats=1),
+                   llm_factory=factory)
+    assert attempts["n"] == 2 and not (out / "failed.jsonl").exists()
+    calls = [json.loads(line) for line in (out / "runs" / "seed5-agents-r1" / "llm_calls.jsonl").read_text().splitlines()]
+    assert calls and not any((c["error"] or "").startswith("llm_error") for c in calls)
+
+
+def test_a_run_that_keeps_failing_is_reported_and_left_out(tmp_path):
+    factory, attempts = flaky_live(fail_attempts=ev.RUN_ATTEMPTS)
+    out = evaluate(tmp_path, ev.EvalSettings(seeds=(5,), policies=("agents",), llm_mode="live", repeats=1),
+                   llm_factory=factory)
+    assert attempts["n"] == ev.RUN_ATTEMPTS
+    failed = [json.loads(line) for line in (out / "failed.jsonl").read_text().splitlines()]
+    assert [(f["run_id"], f["attempts"]) for f in failed] == [("seed5-agents-r1", ev.RUN_ATTEMPTS)]
+    assert failed[0]["first_error"].startswith("llm_error: ValueError")
+    data = ev.load_evaluation(out.name, tmp_path / "evals")
+    assert [r["policy"] for r in data["rows"]] == ["greedy"] and data["summary"]["failed_runs"] == failed
+    assert (out / "runs" / "failed" / "seed5-agents-r1").exists() and not (out / "runs" / "seed5-agents-r1").exists()
+
+
+def test_parallel_workers_write_the_same_results_in_plan_order(tmp_path):
+    settings = ev.EvalSettings(seeds=(5, 6, 7), policies=("agents", "agents-nonego"))
+    one = evaluate(tmp_path, settings)
+    four = evaluate(tmp_path, settings, workers=4)
+    assert (four / "results.jsonl").read_bytes() == (one / "results.jsonl").read_bytes()
+    assert (four / "summary.json").read_bytes() == (one / "summary.json").read_bytes()

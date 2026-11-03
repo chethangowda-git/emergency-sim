@@ -121,3 +121,65 @@ def test_live_calls_record_token_usage():
     client = LLMClient("live", model="m", runner=runner)
     ask(client)
     assert client.calls[-1]["usage"] == {"requests": 2, "input_tokens": 900, "output_tokens": 40}
+
+
+# ----- live retries and tracing -----
+
+def api_error(kind, status=None, headers=None, code=None):
+    import httpx2 as httpx
+    import openai
+    req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    if kind is openai.APIConnectionError:
+        return openai.APIConnectionError(request=req)
+    resp = httpx.Response(status, headers=headers or {}, request=req)
+    return kind("boom", response=resp, body={"code": code} if code else None)
+
+
+def flaky(errors):
+    """A live runner that raises the given errors in turn, then answers."""
+    left = list(errors)
+
+    def runner(agent, text):
+        if left:
+            raise left.pop(0)
+        return SimpleNamespace(final_output=Choice(option_id="b", reason="fine"))
+    return runner
+
+
+def test_rate_limits_wait_for_retry_after_then_succeed():
+    import openai
+    waits = []
+    client = LLMClient("live", model="m", sleep=waits.append,
+                       runner=flaky([api_error(openai.RateLimitError, 429, {"retry-after": "3"})]))
+    assert ask(client).output == Choice(option_id="b", reason="fine") and client.calls[-1]["error"] is None
+    assert len(waits) == 1 and 3 <= waits[0] < 4
+
+
+def test_transient_errors_back_off_exponentially():
+    import openai
+    waits = []
+    errors = [api_error(openai.APIConnectionError), api_error(openai.InternalServerError, 503)]
+    client = LLMClient("live", model="m", sleep=waits.append, runner=flaky(errors))
+    assert ask(client).error is None
+    assert 2 <= waits[0] < 3 and 4 <= waits[1] < 5
+
+
+def test_quota_errors_and_exhausted_retries_become_llm_errors():
+    import openai
+
+    from coordination import llm as llm_mod
+    waits = []
+    quota = api_error(openai.RateLimitError, 429, code="insufficient_quota")
+    res = ask(LLMClient("live", model="m", sleep=waits.append, runner=flaky([quota])))
+    assert res.error.startswith("llm_error: RateLimitError") and waits == []
+    always = flaky([api_error(openai.RateLimitError, 429, {"retry-after": "1"})] * llm_mod.RETRY_ATTEMPTS)
+    res = ask(LLMClient("live", model="m", sleep=waits.append, runner=always))
+    assert res.error.startswith("llm_error") and len(waits) == llm_mod.RETRY_ATTEMPTS - 1
+
+
+def test_live_mode_turns_off_sdk_tracing(monkeypatch):
+    import agents
+    seen = []
+    monkeypatch.setattr(agents, "set_tracing_disabled", seen.append)
+    LLMClient("live", model="m", runner=flaky([]))
+    assert seen == [True]
