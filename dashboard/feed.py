@@ -42,13 +42,10 @@ def entries_at(key: str, minute: int, _run: dict, _roads) -> list[dict]:
 
 
 @st.cache_data(max_entries=1200, show_spinner=False)
-def conversation_at(key: str, minute: int, incident: str, agent: str | None, _run: dict, _roads) -> str:
+def conversation_at(key: str, minute: int, incident: str, _run: dict, _roads) -> str:
     ctx = context(key, minute, _run, _roads)
     ids = [i["id"] for i in _run["timeline"][minute]["incidents"]]
-    lines = agents_tab.only(conversation.conversation(ctx, incident, ids), agent)
-    if agent and not lines:
-        return f"<div class='cv-n'>· {conversation.name(agent)} has not said or been asked anything here yet.</div>"
-    return conversation.conversation_html(lines)
+    return conversation.conversation_html(conversation.conversation(ctx, incident, ids))
 
 
 @st.cache_data(max_entries=600, show_spinner=False)
@@ -56,24 +53,30 @@ def cards_at(key: str, minute: int, _run: dict, _roads) -> list[dict]:
     return agents_tab.cards(context(key, minute, _run, _roads))
 
 
+@st.cache_data(max_entries=600, show_spinner=False)
+def agent_lines_at(key: str, minute: int, agent: str, _run: dict, _roads) -> list[dict]:
+    return agents_tab.agent_lines(context(key, minute, _run, _roads), agent)
+
+
 def select(incident: str) -> None:
     """Open an incident's conversation and highlight it on the map."""
     st.session_state.update(story=incident, focus=incident)
 
 
-def pick_agent(agent: str) -> None:
-    """Open Conversations filtered to one agent; picking it again shows everyone."""
-    st.session_state.agent_filter = None if st.session_state.get("agent_filter") == agent else agent
-    st.session_state.feed = FEEDS[0]
+def toggle_agent(agent: str) -> None:
+    """Open one agent's messages under its card; clicking it again closes it."""
+    opened = st.session_state.get("agent_open")
+    st.session_state.agent_open = None if opened == agent else agent
+    st.session_state.agent_shown = agents_tab.PAGE
 
 
-def clear_agent() -> None:
-    st.session_state.agent_filter = None
+def show_earlier() -> None:
+    st.session_state.agent_shown = st.session_state.get("agent_shown", agents_tab.PAGE) + agents_tab.PAGE
 
 
 def render(key: str, run: dict, minute: int, agents: bool, height: int, roads=None, m: dict | None = None) -> None:
     if not agents:
-        st.session_state.agent_filter = None
+        st.session_state.agent_open = None
     if st.session_state.get("feed") not in FEEDS:
         st.session_state.feed = FEEDS[0]
     feed = st.segmented_control("Feed", FEEDS, key="feed", required=True, label_visibility="collapsed",
@@ -90,24 +93,32 @@ def render(key: str, run: dict, minute: int, agents: bool, height: int, roads=No
             state = run["timeline"][minute]
             st.markdown(panels.units_html(state, m) + panels.hospitals_html(state, m), unsafe_allow_html=True)
         elif feed == "Agents":
-            agents_grid(key, run, minute, roads)
+            agents_list(key, run, minute, roads)
         else:
             incidents_tab(key, run, minute, roads)
 
 
-def agents_grid(key: str, run: dict, minute: int, roads) -> None:
-    """One card per agent, two columns; clicking a card opens its messages in Conversations."""
-    picked = st.session_state.get("agent_filter")
-    cards = cards_at(key, minute, run, roads)
-    with st.container(key="agentgrid"):
-        for i in range(0, len(cards), 2):
-            cols = st.columns(2, gap="small")
-            for col, card in zip(cols, cards[i:i + 2]):
-                col.button(agents_tab.card_label(card), key=f"agent_{card['id']}", width="stretch",
-                           type="primary" if card["id"] == picked else "secondary",
-                           on_click=pick_agent, args=(card["id"],),
-                           help=(card["last_text"] or "No message yet") + "\n\nClick to see only this agent's "
-                                "messages in Conversations.")
+def agents_list(key: str, run: dict, minute: int, roads) -> None:
+    """One card per agent; clicking one opens its messages right below it (one agent at a time)."""
+    opened = st.session_state.get("agent_open")
+    with st.container(key="agentlist"):
+        for card in cards_at(key, minute, run, roads):
+            is_open = card["id"] == opened             # the key carries the state, for the open card's highlight
+            st.button(("▾ " if is_open else "▸ ") + agents_tab.card_label(card),
+                      key=f"agent_{'open_' if is_open else ''}{card['id']}", width="stretch",
+                      on_click=toggle_agent, args=(card["id"],),
+                      help="Click to show this agent's messages below; click again to close.")
+            if card["id"] == opened:
+                agent_panel(key, run, minute, roads, card["id"])
+
+
+def agent_panel(key: str, run: dict, minute: int, roads, agent: str) -> None:
+    lines = agent_lines_at(key, minute, agent, run, roads)
+    shown = st.session_state.get("agent_shown", agents_tab.PAGE)
+    earlier = len(lines) - shown
+    if earlier > 0:
+        st.button(f"Show earlier ({earlier} more)", key=f"earlier_{agent}", type="tertiary", on_click=show_earlier)
+    st.markdown(agents_tab.lines_html(lines[-shown:]), unsafe_allow_html=True)
 
 
 def incidents_tab(key: str, run: dict, minute: int, roads) -> None:
@@ -115,12 +126,6 @@ def incidents_tab(key: str, run: dict, minute: int, roads) -> None:
     if not rows:
         st.caption("No incident reported yet.")
         return
-    agent = st.session_state.get("agent_filter")
-    if agent:
-        left, right = st.columns([3, 1], vertical_alignment="center")
-        left.markdown(f"<div class='cv-n' style='margin-left:0'>Showing {conversation.name(agent)} only</div>",
-                      unsafe_allow_html=True)
-        right.button("Show all", key="agent_all", type="tertiary", on_click=clear_agent)
     ids = [r["id"] for r in rows]
     chosen = st.session_state.get("story") or st.session_state.get("focus")
     if chosen not in ids:
@@ -129,4 +134,4 @@ def incidents_tab(key: str, run: dict, minute: int, roads) -> None:
         st.button(f"{'▾ ' if r['id'] == chosen else '▸ '}{r['label']}", key=f"inc_{r['id']}", type="tertiary",
                   on_click=select, args=(r["id"],), help="Show what the agents said about this incident and highlight it on the map")
         if r["id"] == chosen:
-            st.markdown(conversation_at(key, minute, r["id"], agent, run, roads), unsafe_allow_html=True)
+            st.markdown(conversation_at(key, minute, r["id"], run, roads), unsafe_allow_html=True)

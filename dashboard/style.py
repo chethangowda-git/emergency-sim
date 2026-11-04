@@ -20,13 +20,23 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .kpis .kpi-t {font-size: 0.62rem; line-height: 1.15; min-height: 1.45rem;}
 .kpis .kpi-v {font-size: 1.0rem; line-height: 1.2;}
 .kpis .kpi-d {font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.ag-lines {font-size: 0.78rem; line-height: 1.4; margin: 0 0 6px 0;}
+.ag-l {display: flex; gap: 0.4rem; padding: 1px 4px; border-radius: 4px;}
+.ag-l .cv-t {flex: 0 0 3.2rem; opacity: 0.6; font-variant-numeric: tabular-nums;}
+.ag-l .ag-b {flex: 1 1 auto; min-width: 0;}
+.ag-l.in {background: rgba(42,120,214,.10);}
+.ag-l.in .ag-b {padding-left: 1.1rem;}
+.ag-i {font-size: 0.68rem; opacity: 0.7; border: 1px solid rgba(128,128,128,.4); border-radius: 4px; padding: 0 3px;
+    cursor: help;}
 .tab-intro {font-size: 0.74rem; opacity: 0.6; margin: -4px 0 4px 0;}
-.st-key-agentgrid [data-testid="stHorizontalBlock"] {gap: 0.4rem;}
-.st-key-agentgrid div[data-testid="stButton"] button {justify-content: flex-start; text-align: left; padding: 4px 9px;
+.st-key-agentlist {gap: 0.35rem !important;}
+.st-key-agentlist [class*="st-key-agent_open_"] button {border-color: #2a78d6; background: rgba(42,120,214,.14);}
+.st-key-agentlist [class*="st-key-earlier_"] button p {font-size: 0.74rem; font-weight: 400; opacity: 0.8;}
+.st-key-agentlist [class*="st-key-agent_"] button {justify-content: flex-start; text-align: left; padding: 4px 9px;
     min-height: 4.7rem; height: 4.7rem; overflow: hidden; align-items: flex-start;}
-.st-key-agentgrid div[data-testid="stButton"] button div, .st-key-agentgrid div[data-testid="stButton"] button p {
+.st-key-agentlist [class*="st-key-agent_"] button div, .st-key-agentlist [class*="st-key-agent_"] button p {
     text-align: left; justify-content: flex-start; max-width: 100%; margin: 0;}
-.st-key-agentgrid div[data-testid="stButton"] button p {font-size: 0.76rem; line-height: 1.3; white-space: nowrap;
+.st-key-agentlist [class*="st-key-agent_"] button p {font-size: 0.76rem; line-height: 1.3; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis;}
 .st-key-controlbar [data-testid='stHorizontalBlock'] {gap: 0.4rem;}
 .st-key-controlbar button {padding-left: 0.45rem; padding-right: 0.45rem;}

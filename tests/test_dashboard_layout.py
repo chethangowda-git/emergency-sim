@@ -183,6 +183,8 @@ def page(run_dir, run_id, tab, agents):
     from sim import metrics
     data = run_store.load_run(run_id, Path(run_dir))
     st.session_state.feed = tab
+    st.session_state.agent_open = "dispatch"        # the Agents tab with one agent's messages open
+    st.session_state.agent_shown = 2
     feed.render("k", data, 6, agents, 300, None, metrics.at_minute(data["victims"], data["timeline"], data["events"], 6))
 
 for tab in ("Conversations", "Agents", "Resources", "Log"):

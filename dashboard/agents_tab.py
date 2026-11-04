@@ -5,6 +5,8 @@ messages (dashboard/agent_views.py for pending requests, dashboard/conversation.
 """
 from __future__ import annotations
 
+from html import escape
+
 from dashboard import agent_views
 from dashboard import conversation as C
 from dashboard import wording as W
@@ -90,13 +92,44 @@ def card_label(card: dict) -> str:
     return f"{name}  \n{md(card['status'])}  \n:gray[{md(card['last_text'] or 'No message yet')}]"
 
 
+PAGE = 10   # lines shown when an agent opens; "Show earlier" adds this many more
+
+
 def involves(line: dict, agent: str) -> bool:
     return line["kind"] == "msg" and (line["sender"] == agent or agent in line["to"])
 
 
-def only(lines: list[dict], agent: str | None) -> list[dict]:
-    """A conversation filtered to one agent's messages (sent or received); narrator lines drop out."""
-    return lines if agent is None else [l for l in lines if involves(l, agent)]
+def agent_lines(ctx: C.Context, agent: str) -> list[dict]:
+    """Every message the agent sent or received up to the minute, in time order, each tagged with the incident
+    it is about (or "Between hospitals"), worded as in Conversations."""
+    minute = ctx.run["timeline"][ctx.minute]
+    names = {i["id"]: W.incident_name(i) for i in minute["incidents"]}
+    ids = list(names)
+    out, seen = [], set()
+    for iid in [*ids, C.BETWEEN]:
+        for line in C.conversation(ctx, iid, ids):
+            key = (line["t"], line.get("sender"), tuple(line.get("to") or ()), line["text"])
+            if involves(line, agent) and key not in seen:
+                seen.add(key)
+                out.append({**line, "incident": iid, "incident_name": names.get(iid, "Between hospitals"),
+                            "out": line["sender"] == agent})
+    return sorted(out, key=lambda l: l["t"])
+
+
+def lines_html(lines: list[dict]) -> str:
+    """'min 136 · I05 → H1, H2: …' for what the agent sent, 'min 137 · I05 ← from H2: …' (indented, tinted)
+    for what it received; the minutes stay in one column."""
+    if not lines:
+        return "<div class='cv-n'>· No messages yet.</div>"
+    rows = []
+    for l in lines:
+        tag = "Between" if l["incident"] == C.BETWEEN else l["incident"]
+        where = f"<span class='ag-i' title='{escape(l['incident_name'], quote=True)}'>{escape(tag)}</span>"
+        who = ("→ " + ", ".join(C.who_html(r) for r in l["to"])) if l["out"] else f"← from {C.who_html(l['sender'])}"
+        ai = f" <span class='ai-tag' title='{escape(l['ai'], quote=True)}'>(AI)</span>" if l.get("ai") else ""
+        rows.append(f"<div class='ag-l {'out' if l['out'] else 'in'}'><span class='cv-t'>{W.minute_tag(l['t'])}</span>"
+                    f"<span class='ag-b'>{where} <b>{who}</b>: {escape(l['text'])}{ai}</span></div>")
+    return "<div class='ag-lines'>" + "".join(rows) + "</div>"
 
 
 def md(text: str) -> str:

@@ -176,14 +176,23 @@ def test_agent_status_phrases():
     assert s() == "✓ Nothing to do"
 
 
-def test_clicking_an_agent_keeps_only_its_messages():
-    from dashboard import agents_tab
-    lines = [C.line(1, "dispatch", ["H1", "H2"], "Can you take the critical patient?"),
-             C.line(2, "H1", ["dispatch"], "No, my ER is full."), C.narrator(2, "An ambulance left."),
-             C.line(3, "H2", ["dispatch"], "Yes.")]
-    assert [l["t"] for l in agents_tab.only(lines, "H1")] == [1, 2]
-    assert [l["t"] for l in agents_tab.only(lines, "dispatch")] == [1, 2, 3]
-    assert agents_tab.only(lines, None) == lines
+def test_an_agents_messages_show_direction_incident_and_stop_at_the_minute(tmp_path):
+    from dashboard import agents_tab as A
+    data = recorded(tmp_path)
+    end = len(data["timeline"]) - 1
+    lines = A.agent_lines(context(data, end, net=roads()), "dispatch")
+    assert lines and [l["t"] for l in lines] == sorted(l["t"] for l in lines)
+    assert all(l["kind"] == "msg" and ("dispatch" == l["sender"]) == l["out"] for l in lines)
+    assert all(l["out"] or "dispatch" in l["to"] for l in lines)
+    keys = [(l["t"], l["sender"], tuple(l["to"]), l["text"]) for l in lines]
+    assert len(keys) == len(set(keys)), "a message to several hospitals is one line"
+    assert all(l["incident_name"].startswith(l["incident"]) or l["incident_name"] == "Between hospitals" for l in lines)
+    middle = lines[len(lines) // 2]["t"]
+    assert all(l["t"] <= middle for l in A.agent_lines(context(data, middle, net=roads()), "dispatch"))
+    html = A.lines_html(lines)
+    assert "class='ag-l out'" in html and "class='ag-l in'" in html and "← from " in html and "<b>→ " in html
+    assert not CODE.search(visible(html)), visible(html)
+    assert A.lines_html([]) == "<div class='cv-n'>· No messages yet.</div>"
 
 
 def test_every_tab_says_what_it_shows():

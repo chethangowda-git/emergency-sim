@@ -348,7 +348,7 @@ HOW_TO_READ = """**How to read this**
    ambulance), average time to care, victims delivered and allocation conflicts so far. Below them, each kind
    of unit free now and how busy it has been so far, and each hospital's ER, free doctors and nurses and how
    much of it has been used so far (the **Resources** tab). The **Agents** tab has one card per agent: what it
-   is doing, a hospital's mood and its last message; click one to see only its messages in Conversations.
+   is doing, a hospital's mood and its last message; click one to see its messages, sent and received.
    The **Evaluation** page compares the four versions over 20 scenarios.
 """
 
