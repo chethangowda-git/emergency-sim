@@ -95,8 +95,10 @@ tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
   llm_choices.py       # a recorded live run: where the LLM chose differently from the rule, and the effect
   live_vs_rules.py     # greedy vs rules-only agents vs live LLM agents, from two saved evaluations
+  llm_losses.py        # which LLM choices cost criticals (counterfactual replays), stuck-load counters, guard estimates
 tests/
 runs/                  # gitignored; one folder per run; evaluations in runs/evals/<eval-id>/
+                       # (runs/dev-evals/: development-seed evaluations; only their summaries are committed)
 ```
 
 ## Coding conventions

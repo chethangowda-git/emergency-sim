@@ -12,6 +12,7 @@ from coordination.tools import DispatchScope
 AGENT = "dispatch"
 SEVERITY_RANK = {"critical": 0, "serious": 1, "minor": 2}
 MUTUAL_AID_WITHIN = 60   # minutes left before a non-critical's deadline that justify borrowing a vehicle
+CONDITIONAL_MARGIN = 15  # guard: a conditional offer needs this much slack to count as in time (DESIGN 4.4)
 
 
 def rule_ranking(reports: list[IncidentReport]) -> list[str]:
@@ -21,26 +22,31 @@ def rule_ranking(reports: list[IncidentReport]) -> list[str]:
 
 
 class DispatchAgent:
-    def __init__(self, llm: LLMClient, negotiate: bool = True) -> None:
+    def __init__(self, llm: LLMClient, negotiate: bool = True, guard: bool = False) -> None:
         self.llm = llm
         self.negotiate = negotiate
+        self.guard = guard
         self._last_situation: tuple | None = None
         self._last_judgment: DispatchJudgment | None = None
 
     # ----- unit plan -----
 
-    def plan_units(self, scope: DispatchScope, reports: list[IncidentReport]) -> UnitPlan:
+    def plan_units(self, scope: DispatchScope, reports: list[IncidentReport],
+                   extras: dict[str, dict[str, int]] | None = None) -> UnitPlan:
+        """`extras`: the units Incident Assessment's LLM judgment added per incident; with the guard
+        they are filled last, from free units, and never cause a shortfall (DESIGN 4.2)."""
         by_id = {r.incident: r for r in reports}
         ranking = rule_ranking(reports)
-        plan = self._allocate(scope, ranking, by_id, {})
+        extras = extras if self.guard else None
+        plan = self._allocate(scope, ranking, by_id, {}, extras)
         judgment_needed = plan.shortfalls and (len(ranking) > 1 or any(len(s.options) > 1 for s in plan.shortfalls))
         if not judgment_needed or not self.llm.enabled:
             return plan
         situation = (tuple(sorted(ranking)), tuple((s.incident, tuple(o.id for o in s.options)) for s in plan.shortfalls))
         if situation == self._last_situation and self._last_judgment is not None:
             j = self._last_judgment
-            return self._allocate(scope, j.ranking, by_id, {p.incident: p.option_id for p in j.shortfall_plans}
-                                  ).model_copy(update={"decided_by": "llm", "reason": j.reason})
+            return self._allocate(scope, j.ranking, by_id, {p.incident: p.option_id for p in j.shortfall_plans},
+                                  extras).model_copy(update={"decided_by": "llm", "reason": j.reason})
         payload = {"t": scope.t, "reports": [r.model_dump() for r in reports],
                    "shortfalls": [s.model_dump() for s in plan.shortfalls]}
         result = self.llm.ask(AGENT, "plan_units", prompts.DISPATCH, payload, DispatchJudgment)
@@ -51,28 +57,40 @@ class DispatchAgent:
             return plan.model_copy(update={"decided_by": "fallback", "reason": f"LLM fallback: {why}"})
         self._last_judgment = j
         choices = {p.incident: p.option_id for p in j.shortfall_plans}  # checked against the new plan's options
-        return self._allocate(scope, j.ranking, by_id, choices).model_copy(
+        return self._allocate(scope, j.ranking, by_id, choices, extras).model_copy(
             update={"decided_by": "llm", "reason": j.reason})
 
     def _allocate(self, scope: DispatchScope, ranking: list[str], reports: dict[str, IncidentReport],
-                  choices: dict[str, str]) -> UnitPlan:
+                  choices: dict[str, str], extras: dict[str, dict[str, int]] | None = None) -> UnitPlan:
         """Pass 1: the right unit type per need, by urgency. Pass 2: free ALS units take remaining
-        non-critical needs, but only if no critical anywhere still lacks an ALS ("send what is available")."""
+        non-critical needs, but only if no critical anywhere still lacks an ALS ("send what is available").
+        Pass 3 (guard): the LLM's extra units, from the units still free."""
         used: set[str] = set()
         assignments, actions = [], []
         incidents = {i["id"]: i for i in scope.incidents()}
         shorts: dict[str, UnitCounts] = {}
+        sent: dict[str, dict[str, int]] = {}
         for iid in ranking:
-            missing = self._missing(scope, iid, reports[iid].units_needed)
+            missing = self._missing(scope, iid, self._rule_needs(reports[iid].units_needed, (extras or {}).get(iid)))
+            sent[iid] = {}
             for kind in ("ALS", "BLS", "FIRE", "RESCUE"):
                 kinds = ("BLS", "HV") if kind == "BLS" else (kind,)
                 got = self._assign(scope, incidents[iid], getattr(missing, kind), kinds, used, assignments, actions)
                 setattr(missing, kind, getattr(missing, kind) - got)
+                sent[iid][kind] = got
             shorts[iid] = missing
         if not any(s.ALS for s in shorts.values()):
             for iid in ranking:
-                shorts[iid].BLS -= self._assign(scope, incidents[iid], shorts[iid].BLS, ("ALS",), used,
-                                                assignments, actions)
+                got = self._assign(scope, incidents[iid], shorts[iid].BLS, ("ALS",), used, assignments, actions)
+                shorts[iid].BLS -= got
+                sent[iid]["BLS"] += got
+        if extras:
+            for iid in ranking:
+                full = self._missing(scope, iid, reports[iid].units_needed)
+                for kind in ("ALS", "BLS"):
+                    left = getattr(full, kind) - sent[iid][kind] - getattr(shorts[iid], kind)
+                    kinds = ("BLS", "HV") if kind == "BLS" else (kind,)
+                    self._assign(scope, incidents[iid], max(0, left), kinds, used, assignments, actions)
         shortfalls = []
         for pos, iid in enumerate(ranking):
             short = shorts[iid]
@@ -100,6 +118,12 @@ class DispatchAgent:
             name = "assign_team" if kinds[0] in ("FIRE", "RESCUE") else "send_to_scene"
             actions.append(ProposedAction(action=name, unit=unit, incident=inc["id"]))
         return got
+
+    @staticmethod
+    def _rule_needs(needed: UnitCounts, extra: dict[str, int] | None) -> UnitCounts:
+        if not extra:
+            return needed
+        return UnitCounts(**{k: max(0, v - extra.get(k, 0)) for k, v in needed.model_dump().items()})
 
     def _missing(self, scope: DispatchScope, iid: str, needed: UnitCounts) -> UnitCounts:
         coming = [u for u in scope.units() if u["incident"] == iid and not u["hospital"]
@@ -183,7 +207,7 @@ class DispatchAgent:
 
     def _award_plans(self, scope, req, offers) -> dict[str, tuple[list[Award], list[str]]]:
         nodes = {h["id"]: h for h in scope.hospitals()}
-        offered = self._offered(scope, req, offers, nodes)
+        offered = self._offered(scope, req, offers, nodes, self.guard)
         hopeless = self._hopeless(scope, req, nodes)
         victims = sorted(req.victims, key=lambda v: (SEVERITY_RANK[v.severity], v.deadline or 10**9, v.id))
         plans = {"earliest": self._plan(victims, offered, lambda o: (o[1], o[0]), hopeless=hopeless)}
@@ -194,11 +218,22 @@ class DispatchAgent:
         single = self._single_hospital(victims, offered)
         if single and single not in plans.values():
             plans["one_hospital"] = single
+        if req.aboard and len(victims) > 1:
+            return self._whole_load(plans, {v.id for v in victims})
         return plans
 
     @staticmethod
-    def _offered(scope, req, offers, nodes) -> dict[str, list[tuple[str, int]]]:
-        """For each victim, (hospital, arrival minute) for every offer that would take them."""
+    def _whole_load(plans, victims: set[str]) -> dict[str, tuple[list[Award], list[str]]]:
+        """Victims aboard one unit go to one hospital together, or wait for the next round (DESIGN 5.2)."""
+        whole = {k: p for k, p in plans.items() if len(p[0]) == 1 and set(p[0][0].victims) == victims}
+        return whole or {"earliest": ([], plans["earliest"][1])}
+
+    @staticmethod
+    def _offered(scope, req, offers, nodes, guard: bool = False) -> dict[str, list[tuple[str, int]]]:
+        """For each victim, (hospital, arrival minute) for every offer that would take them. With the
+        guard, a conditional offer is planned CONDITIONAL_MARGIN minutes late: it counts as in time only
+        with that much slack, so a critical relying on it escalates instead (DESIGN 4.4)."""
+        margin = CONDITIONAL_MARGIN if guard else 0
         out: dict[str, list[tuple[str, int]]] = {v.id: [] for v in req.victims}
         for o in offers:
             node = nodes[o.hospital]["node"]
@@ -210,7 +245,7 @@ class DispatchAgent:
             for c in o.conditional:
                 for vid in c.victims:
                     if vid in out:
-                        out[vid].append((o.hospital, max(base, c.after_minute or base)))
+                        out[vid].append((o.hospital, max(base, c.after_minute or base) + margin))
         return out
 
     @staticmethod

@@ -127,6 +127,7 @@ class LLMClient:
         if mode == "live":
             disable_tracing()
         self._replay = self._load_replay(replay_path) if mode == "replay" else {}
+        self.replay_path = replay_path if mode == "replay" else None
         self.calls: list[dict] = []
 
     @property

@@ -53,7 +53,7 @@ class Load:
 
 
 class AgentPolicy(HospitalProtocols, Policy):
-    def __init__(self, llm: LLMClient, variant: str = "full") -> None:
+    def __init__(self, llm: LLMClient, variant: str = "full", guard: bool = True) -> None:
         if variant not in VARIANTS:
             raise ValueError(f"unknown variant {variant!r}")
         self.variant = variant
@@ -63,9 +63,10 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.negotiate = variant in ("full", "noarb")
         self.dispatch_negotiates = variant != "nonego"
         self.llm = llm
+        self.guard = guard   # rules check the LLM's conditional offers and extra units (DESIGN 12.8)
         self.bus = MessageBus()
-        self.ia, self.arbiter = IncidentAssessmentAgent(llm), ArbiterAgent(llm)
-        self.dispatch = DispatchAgent(llm, negotiate=variant != "nonego")
+        self.ia, self.arbiter = IncidentAssessmentAgent(llm, guard=guard), ArbiterAgent(llm)
+        self.dispatch = DispatchAgent(llm, negotiate=variant != "nonego", guard=guard)
         self.hospital_agents: dict = {}
         self.reports: dict[str, IncidentReport] = {}
         self.extras: dict[str, IncidentReport] = {}
@@ -76,7 +77,9 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.unit_threads: dict[str, str] = {}
         self.queue: list[tuple[int, Action]] = []
         self.cooldown: dict[tuple[str, str], int] = {}
-        self.pending_reserve: dict[str, dict] = {}
+        self.pending_reserve: dict[str, dict[str, dict]] = {}   # hospital -> award thread -> conditional award
+        self.transfer_award: dict[str, str] = {}                # transferring patient -> award it makes room for
+        self.failed_conditional: set[str] = set()               # admission threads where a transfer did not happen
         self.log: list[dict] = []
         self.replan, self.last_plan = False, -REPLAN_EVERY
         self.last_shortfalls: list[dict] = []
@@ -164,7 +167,7 @@ class AgentPolicy(HospitalProtocols, Policy):
             elif kind == "stabilized":
                 self._consider_transfer(e["hospital"], e["victim"])
             elif kind == "transfer_started":
-                self._after_transfer(e["from_hospital"])
+                self._after_transfer(e["from_hospital"], e["victim"])
             elif kind == "action_rejected":
                 self._rejected(e)
 
@@ -234,7 +237,8 @@ class AgentPolicy(HospitalProtocols, Policy):
         open_ids = [i for i in self.reports if scope.at_scene(i)]
         if not open_ids:
             return
-        plan = self.dispatch.plan_units(DispatchScope(self.view), [self.reports[i] for i in open_ids])
+        plan = self.dispatch.plan_units(DispatchScope(self.view), [self.reports[i] for i in open_ids],
+                                        extras=self.extra_units)
         shortfalls = [{"incident": s.incident, "chosen": s.chosen} for s in plan.shortfalls]
         if not plan.assignments and shortfalls == self.last_shortfalls:
             return
@@ -334,7 +338,15 @@ class AgentPolicy(HospitalProtocols, Policy):
                  else req.ready_at + scope.travel(req.origin_node, h["node"]) for h in hospitals]
         return min(times, default=None)
 
+    def _sync_aboard(self, load: Load) -> None:
+        """A load with victims aboard is exactly the victims aboard: one unit, one destination (DESIGN 5.2)."""
+        u = self._unit(load.unit)
+        if u["state"] in ("transporting", "at_hospital_no_slot") and u["victims"]:
+            load.victims = sorted(u["victims"], key=lambda v: (SEVERITY_RANK[self._victim(v)["severity"]],
+                                                              self._victim(v)["deadline"] or 10**9, v))
+
     def _start_admission(self, load: Load) -> None:
+        self._sync_aboard(load)
         req = self._request(load)
         needs = {v.care_need for v in req.victims}
         hospitals = [h for h in DispatchScope(self.view).hospitals()
@@ -364,7 +376,8 @@ class AgentPolicy(HospitalProtocols, Policy):
         self._free_promises(m.thread_id, hospitals=(m.recipient,))  # a new round replaces this thread's offer
         offer = agent.respond_admission(HospitalScope(self.view, m.recipient),
                                         AdmissionRequest.model_validate(m.proposed_action),
-                                        promised=self._promised_elsewhere(m.recipient))
+                                        promised=self._promised_elsewhere(m.recipient),
+                                        transfer_ready=self._transfer_ready(m.recipient, m.thread_id))
         for a in offer.proposed_actions:
             if a.action == "release_patient":
                 self.promised.setdefault(m.recipient, {})[a.victim] = (m.thread_id, self.t + PROMISE_MINUTES)
@@ -384,6 +397,14 @@ class AgentPolicy(HospitalProtocols, Policy):
         if set(load.offers) >= set(load.expected):
             self._award(load)
 
+    def _transfer_ready(self, hospital: str, thread: str) -> bool:
+        """Guard (DESIGN 4.3 rung 4): "after transfer" only if a transfer could start now, and never again
+        in a negotiation where one did not happen."""
+        if not self.guard:
+            return True
+        return (self.cooldown.get(("transfer", hospital), -1) <= self.t and not self.pending_reserve.get(hospital)
+                and thread not in self.failed_conditional)
+
     def _promised_elsewhere(self, hospital: str) -> frozenset[str]:
         return frozenset(p for p, (_, until) in self.promised.get(hospital, {}).items() if until >= self.t)
 
@@ -399,6 +420,7 @@ class AgentPolicy(HospitalProtocols, Policy):
         return load if load is not None and load.thread == thread else None
 
     def _award(self, load: Load, after_decline: bool = False) -> None:
+        self._sync_aboard(load)
         req = self._request(load)
         offers = [load.offers[h] for h in sorted(load.offers)]
         d = self.dispatch.award(DispatchScope(self.view), req, offers)
@@ -418,12 +440,13 @@ class AgentPolicy(HospitalProtocols, Policy):
             self.replan = True
         offer = load.offers[mine.hospital]
         conditional = [v for c in offer.conditional for v in c.victims if v in load.victims]
+        body = {"victims": load.victims, "conditional": conditional,
+                "actions": [a.model_dump() for a in offer.proposed_actions]}
+        if conditional:
+            body["after_minute"] = max(c.after_minute or self.t for c in offer.conditional)
         load.status, load.hospital = "awarded", mine.hospital
         self.send("dispatch", mine.hospital, "admission_award", load.thread, load.round, incident_id=load.incident,
-                  victim_ids=load.victims, proposed_action={
-                      "victims": load.victims, "conditional": conditional,
-                      "actions": [a.model_dump() for a in offer.proposed_actions]}, reason=d.reason,
-                  decided_by=d.decided_by)
+                  victim_ids=load.victims, proposed_action=body, reason=d.reason, decided_by=d.decided_by)
 
     def _no_award(self, load: Load, req: AdmissionRequest, escalate: bool) -> None:
         if escalate:
@@ -499,6 +522,7 @@ class AgentPolicy(HospitalProtocols, Policy):
     # ----- upkeep -----
 
     def _upkeep(self) -> None:
+        self._conditional_timeouts()
         for unit in sorted(self.loads):
             load = self.loads[unit]
             u = self._unit(unit)
@@ -548,7 +572,7 @@ class AgentPolicy(HospitalProtocols, Policy):
             if a.action == "reserve" and a.kind == "firm":
                 self.minute_reserved[a.hospital] = self.minute_reserved.get(a.hospital, 0) + len(a.victims)
         load.final, load.hospital = True, d.hospital
-        if d.victim in load.victims and len(load.victims) > 1:
+        if d.victim in load.victims and len(load.victims) > 1 and not self._unit(load.unit)["victims"]:
             load.victims = [d.victim]
             self.replan = True
         moves = [a for a in d.proposed_actions if a.action in ("set_destination", "reroute") and a.unit == load.unit]

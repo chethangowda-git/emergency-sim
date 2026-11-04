@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from coordination.hospital import TRANSFER_START_MINUTES
 from coordination.schemas import (LoanResponse, ProposedAction, StaffRequest, TransferRequest, TransferResponse,
                                   VehicleRequest)
 from coordination.tools import DispatchScope, HospitalScope, staff_free_slots
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 
 LOAN_MINUTES = 90
 STAFF_COOLDOWN = 30
+TRANSFER_COOLDOWN = 10
+CONDITION_GRACE = 1     # one round past the offer's condition time before the award counts as declined
 
 
 class HospitalProtocols:
@@ -32,8 +35,9 @@ class HospitalProtocols:
         victims = m.proposed_action["victims"]
         if m.proposed_action["conditional"]:
             self.act(*releases)
-            self.pending_reserve[h] = {"thread": m.thread_id, "victims": victims, "round": m.round}
-            self._consider_transfer(h, None, forced=True)
+            due = (m.proposed_action.get("after_minute") or self.t + TRANSFER_START_MINUTES) + CONDITION_GRACE
+            self.pending_reserve.setdefault(h, {})[m.thread_id] = {"victims": victims, "round": m.round, "due": due}
+            self._consider_transfer(h, None, forced=True, award=m.thread_id)
             return
         held = sum(1 for x in scope.me["holds"] if x["victim"] in victims)
         room = scope.me["free_slots"] + held + len([a for a in releases if a.action == "release_patient"])
@@ -49,10 +53,21 @@ class HospitalProtocols:
         self.act(Reserve(h, tuple(victims), "firm", by=h))
         self.send(h, "dispatch", "ack", thread, round_, victim_ids=victims, reason="firm reservation placed")
 
-    def _after_transfer(self: AgentPolicy, hospital: str) -> None:
-        pending = self.pending_reserve.pop(hospital, None)
-        if pending:
-            self._reserve_and_ack(hospital, pending["thread"], pending["round"], pending["victims"])
+    def _after_transfer(self: AgentPolicy, hospital: str, victim: str) -> None:
+        """A started transfer confirms the conditional award it was made for, else the oldest pending one."""
+        pending = self.pending_reserve.get(hospital, {})
+        award = self.transfer_award.pop(victim, None)
+        if award not in pending:
+            award = min(pending, key=lambda th: (pending[th]["due"], th), default=None)
+        if award is not None:
+            p = pending.pop(award)
+            self._reserve_and_ack(hospital, award, p["round"], p["victims"])
+
+    def _conditional_timeouts(self: AgentPolicy) -> None:
+        """A conditional award whose transfer has not started by the offer's time is declined (DESIGN 5.2, 8)."""
+        for h in sorted(self.pending_reserve):
+            for award in sorted(th for th, p in self.pending_reserve[h].items() if self.t >= p["due"]):
+                self._transfer_failed(h, award, "transfer not started in time")
 
     # ----- holds on pre-alert (DESIGN 3.8) -----
 
@@ -80,31 +95,35 @@ class HospitalProtocols:
 
     # ----- routine stabilize and transfer (DESIGN 5.5) -----
 
-    def _consider_transfer(self: AgentPolicy, hospital: str, victim: str | None, forced: bool = False) -> None:
+    def _consider_transfer(self: AgentPolicy, hospital: str, victim: str | None, forced: bool = False,
+                           award: str | None = None) -> None:
+        """`award`: the conditional admission award this transfer is meant to make room for."""
         if not self.negotiate:
             return
         scope = HospitalScope(self.view, hospital)
         if not forced and scope.mood() != "protective":
             return
         candidates = [p for p in scope.patients("transferable") if victim is None or p["id"] == victim]
-        if not candidates or not scope.idle_vehicles() or not self._cool("transfer", hospital, 10):
+        if not candidates or not scope.idle_vehicles() or not self._cool("transfer", hospital, TRANSFER_COOLDOWN):
             if forced:
-                self._transfer_failed(hospital)
+                self._transfer_failed(hospital, award)
             return
         p = candidates[0]
         others = [h for h in DispatchScope(self.view).hospitals() if h["id"] != hospital]
         th = self.open_thread("transfer", sender=hospital, victim=p["id"], replies={},
-                              expected=[h["id"] for h in others], due=self.t + 2)
+                              expected=[h["id"] for h in others], due=self.t + 2, award=award)
         req = TransferRequest(victim=p["id"], care_need=p["care_need"], from_hospital=hospital,
                               sender_capabilities=scope.me["capabilities"])
         for h in others:
             self.send(hospital, h["id"], "transfer_request", th, victim_ids=[p["id"]], proposed_action=req.model_dump())
 
-    def _transfer_failed(self: AgentPolicy, hospital: str) -> None:
-        pending = self.pending_reserve.pop(hospital, None)
+    def _transfer_failed(self: AgentPolicy, hospital: str, award: str | None,
+                         reason: str = "transfer did not happen") -> None:
+        pending = self.pending_reserve.get(hospital, {}).pop(award, None) if award else None
         if pending:
-            self.send(hospital, "dispatch", "decline", pending["thread"], pending["round"],
-                      victim_ids=pending["victims"], reason="transfer did not happen")
+            self.failed_conditional.add(award)
+            self.send(hospital, "dispatch", "decline", award, pending["round"], victim_ids=pending["victims"],
+                      reason=reason)
 
     def _h_transfer_transfer_request(self: AgentPolicy, m: Message) -> None:
         r = self.hospital_agents[m.recipient].respond_transfer(HospitalScope(self.view, m.recipient),
@@ -127,7 +146,7 @@ class HospitalProtocols:
         yes = sorted((h for h, r in th["replies"].items() if r.accept),
                      key=lambda h: (scope.travel(node[th["sender"]], node[h]), h))
         if not yes:
-            self._transfer_failed(th["sender"])
+            self._transfer_failed(th["sender"], th.get("award"))
             return
         th["receiver"] = yes[0]
         self.send(th["sender"], yes[0], "ack", thread, victim_ids=[th["victim"]], reason="you take the transfer")
@@ -139,9 +158,11 @@ class HospitalProtocols:
             return
         vehicles = HospitalScope(self.view, th["sender"]).idle_vehicles()
         if not vehicles:
-            self._transfer_failed(th["sender"])
+            self._transfer_failed(th["sender"], th.get("award"))
             return
         self.act(TransferPatient(th["victim"], th["receiver"], vehicles[0], by=th["sender"]))
+        if th.get("award"):
+            self.transfer_award[th["victim"]] = th["award"]
         self.decision(th["sender"], "transfer", "rule", f"transfer {th['victim']} to {th['receiver']}")
 
     # ----- staff lending (DESIGN 5.6) -----

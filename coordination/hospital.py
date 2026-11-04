@@ -11,6 +11,9 @@ from coordination.schemas import (AdmissionOffer, AdmissionRequest, Conditional,
 from coordination.tools import HospitalScope
 
 SEVERITY_RANK = {"critical": 0, "serious": 1, "minor": 2}
+# An "after transfer" offer's condition holds when the transfer starts: the award, the transfer request and
+# reply, the choice of receiver and its reservation (6 minutes of messages), then 5 minutes of preparation.
+TRANSFER_START_MINUTES = 11
 
 
 def by_urgency(victims: list[RequestedVictim]) -> list[RequestedVictim]:
@@ -51,15 +54,16 @@ class HospitalAgent:
     # ----- admission -----
 
     def respond_admission(self, scope: HospitalScope, req: AdmissionRequest,
-                          promised: frozenset[str] = frozenset()) -> AdmissionOffer:
+                          promised: frozenset[str] = frozenset(), transfer_ready: bool = True) -> AdmissionOffer:
         """`promised`: ready-for-release patients this hospital already offered to release in another
-        open offer; each is promised once (DESIGN 4.3)."""
+        open offer; each is promised once (DESIGN 4.3). `transfer_ready`: a transfer could start now,
+        so an "after transfer" offer can be kept (the guard, DESIGN 12.8)."""
         mood = scope.mood()
         caps = scope.me["capabilities"]
         treatable = by_urgency([v for v in req.victims if v.care_need in caps])
         no_cap = [v.id for v in req.victims if v.care_need not in caps]
         base_decline = [Decline(victims=no_cap, reason="cannot treat this care need")] if no_cap else []
-        options = self._admission_options(scope, mood, treatable, base_decline, promised)
+        options = self._admission_options(scope, mood, treatable, base_decline, promised, transfer_ready)
         if not self.negotiate:
             options = {"accept_now": options["accept_now"]}
         ids = list(options)
@@ -83,7 +87,8 @@ class HospitalAgent:
         return AdmissionOffer(hospital=self.id, mood=mood, accept=list(accept), conditional=list(conditional),
                               decline=decline, proposed_actions=list(actions), decided_by="rule")
 
-    def _admission_options(self, scope, mood, treatable, base_decline, promised=frozenset()) -> dict[str, AdmissionOffer]:
+    def _admission_options(self, scope, mood, treatable, base_decline, promised=frozenset(),
+                           transfer_ready=True) -> dict[str, AdmissionOffer]:
         """The section 4.3 ladder: free capacity, release ready patients (only for a load with a critical, and
         only patients not promised elsewhere), after a transfer, protect criticals."""
         ids = [v.id for v in treatable]
@@ -101,8 +106,8 @@ class HospitalAgent:
                 opts["release_then_accept"] = self._offer(mood, ids, more, full, base_decline, actions=releases)
         left = [i for i in ids if i not in now]
         transferable = scope.patients("transferable")
-        if transferable and scope.idle_vehicles() and left:
-            cond = [Conditional(victims=left[: len(transferable)], after="transfer", after_minute=scope.t + 5)]
+        if transferable and scope.idle_vehicles() and left and transfer_ready:
+            cond = [Conditional(victims=left[: len(transferable)], after="transfer", after_minute=scope.t + TRANSFER_START_MINUTES)]
             opts["after_transfer"] = self._offer(mood, ids, now, full, base_decline, conditional=cond)
         if mood == "protective":
             crit = [v.id for v in treatable if v.severity == "critical" and v.id in now]
@@ -192,7 +197,7 @@ class RuleHospital:
         self.negotiate = False
 
     def respond_admission(self, scope: HospitalScope, req: AdmissionRequest,
-                          promised: frozenset[str] = frozenset()) -> AdmissionOffer:
+                          promised: frozenset[str] = frozenset(), transfer_ready: bool = True) -> AdmissionOffer:
         treatable = by_urgency([v for v in req.victims if v.care_need in scope.me["capabilities"]])
         now = fit_now(scope, treatable)
         rest = [v.id for v in req.victims if v.id not in now]

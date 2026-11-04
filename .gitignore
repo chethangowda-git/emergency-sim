@@ -1,4 +1,6 @@
-runs/
+runs/*
+!runs/dev-evals/
+runs/dev-evals/*/runs/
 .env
 CLAUDE.local.md
 __pycache__/

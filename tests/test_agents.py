@@ -170,6 +170,74 @@ def test_award_leaves_victims_nobody_offered_for_the_next_round():
     assert d.escalate == [] and [a.victims for a in d.awards] == [["I01-V2"]]
 
 
+def test_award_never_splits_victims_aboard_one_unit():
+    w, req, offers = award_setup()
+    aboard = req.model_copy(update={"aboard": True, "unit": "BLS1"})
+    split = [offers[0].model_copy(update={"accept": ["I01-V1"]}), offers[1]]
+    d = DispatchAgent(fake({"option_id": "earliest", "reason": "x"})).award(DispatchScope(w.snapshot()), aboard, split)
+    assert d.awards == [] and d.escalate == []                       # one unit, one destination: next round
+    d = DispatchAgent(OFF).award(DispatchScope(w.snapshot()), aboard, offers)
+    assert [(a.hospital, a.victims) for a in d.awards] == [("H1", ["I01-V1", "I01-V2"])]
+
+
+# ----- the guard (DESIGN 12.8) -----
+
+def extras_world(n_als):
+    return make_world([incident("I01", "C", 0, [("critical", "trauma")]), incident("I02", "B", 0, [("critical", "trauma")])],
+                      units=[UnitSpec(f"ALS{k}", "ALS", "A", "A") for k in range(1, n_als + 1)])
+
+
+def test_ia_guard_allows_at_most_one_extra_als():
+    w = fire_world()
+    w.start()
+    llm = fake({"flags": [], "extra_als": 2, "extra_bls": 1, "note": "school bus"})
+    assert IncidentAssessmentAgent(llm).assess(IncidentScope(w.snapshot()), "I01").units_needed.ALS == 4
+    guarded = IncidentAssessmentAgent(llm, guard=True).assess(IncidentScope(w.snapshot()), "I01")
+    assert (guarded.units_needed.ALS, guarded.units_needed.BLS) == (3, 3)
+
+
+def test_guard_fills_extra_units_last_and_never_short():
+    w = extras_world(2)
+    w.start()
+    rs = reports(w)
+    rs[0] = rs[0].model_copy(update={"units_needed": rs[0].units_needed.model_copy(update={"ALS": 2})})
+    extras = {"I01": {"ALS": 1, "BLS": 0, "FIRE": 0, "RESCUE": 0}}
+    unguarded = DispatchAgent(OFF).plan_units(DispatchScope(w.snapshot()), rs, extras=extras)
+    assert [a.incident for a in unguarded.assignments] == ["I01", "I01"] and unguarded.shortfalls[0].incident == "I02"
+    guarded = DispatchAgent(OFF, guard=True).plan_units(DispatchScope(w.snapshot()), rs, extras=extras)
+    assert sorted(a.incident for a in guarded.assignments) == ["I01", "I02"] and not guarded.shortfalls
+    w = extras_world(3)
+    w.start()
+    spare = DispatchAgent(OFF, guard=True).plan_units(DispatchScope(w.snapshot()), rs, extras=extras)
+    assert sorted(a.incident for a in spare.assignments) == ["I01", "I01", "I02"]   # a free ALS takes the extra
+
+
+def test_guard_counts_a_conditional_offer_in_time_only_with_slack():
+    w, req, offers = award_setup()                       # I01-V1: critical, deadline 60
+    def cond(after):
+        return [AdmissionOffer(hospital="H1", mood="protective", accept=[], decided_by="rule",
+                               conditional=[Conditional(victims=["I01-V1"], after="transfer", after_minute=after)]),
+                offers[1]]
+    scope = DispatchScope(w.snapshot())
+    assert DispatchAgent(OFF).award(scope, req, cond(50)).awards[0].hospital == "H1"      # 10 minutes of slack
+    d = DispatchAgent(OFF, guard=True).award(scope, req, cond(50))
+    assert d.escalate == ["I01-V1"] and all("I01-V1" not in a.victims for a in d.awards)
+    assert DispatchAgent(OFF, guard=True).award(scope, req, cond(45)).awards[0].hospital == "H1"   # 15 minutes
+
+
+def test_guard_hospital_offers_after_transfer_only_when_a_transfer_could_start():
+    w = make_world([], hospitals=[hospital("H1", "C", slots=1, doctors=("trauma", "trauma"), nurses=2)],
+                   walk_ins=[walk_in("W01", "H1", 0, "critical", "trauma")])
+    run_until(w, 21)                                     # W01 transferable, the vehicle idle, no free slot
+    scope = HospitalScope(w.snapshot(), "H1")
+    req = request(("V1", "serious", "trauma", 120))
+    llm = fake({"option_id": "after_transfer", "reason": "after my transfer"})
+    ready = HospitalAgent("H1", llm).respond_admission(scope, req)
+    assert ready.conditional and ready.conditional[0].after_minute == 21 + 11
+    blocked = HospitalAgent("H1", llm).respond_admission(scope, req, transfer_ready=False)
+    assert blocked.conditional == [] and blocked.decided_by == "rule"
+
+
 # ----- Hospital -----
 
 def test_mood_thresholds():

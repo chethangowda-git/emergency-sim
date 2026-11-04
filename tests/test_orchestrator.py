@@ -255,3 +255,88 @@ def test_a_ready_patient_is_promised_in_one_open_offer_at_a_time():
     assert cfp("I02-V1") == []                        # W01 is already promised to the first offer
     p.t += 4                                          # the first promise lapses unanswered
     assert cfp("I03-V1") == ["W01"]
+
+
+# ----- conditional awards and loads aboard (DESIGN 5.2, 8) -----
+
+def step_agents(world, policy, events, until):
+    while world.t < until:
+        actions = policy.decide(world.snapshot(), events)
+        world.log(policy.drain_log())
+        events = world.apply(actions) + world.step()
+    return events
+
+
+def conditional_award(p, hospital_id, victim, unit):
+    th = p.open_thread("admission", unit=unit)
+    p.send("dispatch", hospital_id, "admission_award", th, victim_ids=[victim], proposed_action={
+        "victims": [victim], "conditional": [victim], "actions": [], "after_minute": p.t + 11})
+    return th
+
+
+def replies(p, thread, world=None):
+    logged = (world.events if world else []) + p.log
+    return [(e["msg_type"], e.get("reason")) for e in logged if e.get("type") == "message"
+            and e["thread_id"] == thread and e["msg_type"] in ("ack", "decline")]
+
+
+def test_two_conditional_awards_at_one_hospital_each_get_an_answer():
+    w = make_world([incident("I01", "B", 0, [("serious", "trauma"), ("serious", "trauma")])],
+                   hospitals=[hospital("H1", "C", slots=2, doctors=("trauma", "trauma"), nurses=2),
+                              hospital("H2", "E", caps=TRAUMA_GENERAL, slots=4, doctors=("trauma",), nurses=2)],
+                   units=[], walk_ins=[walk_in("W01", "H1", 0, "critical", "trauma")])
+    p = agents()
+    events = step_agents(w, p, w.start(), 21)              # W01 is transferable, H1's vehicle idle
+    a = conditional_award(p, "H1", "I01-V1", "X1")         # delivered next minute: starts W01's transfer
+    b = conditional_award(p, "H1", "I01-V2", "X2")         # in the transfer cooldown: no second transfer
+    events = step_agents(w, p, events, 22)
+    assert replies(p, b, w) == [("decline", "transfer did not happen")]
+    assert list(p.pending_reserve["H1"]) == [a]            # the first award is kept, not overwritten
+    step_agents(w, p, events, 33)
+    assert replies(p, a, w) == [("ack", "firm reservation placed")] and p.pending_reserve["H1"] == {}
+    assert of_type(w.events, "transfer_started")[0]["victim"] == "W01"
+
+
+def test_a_conditional_award_not_started_in_time_is_declined():
+    w = make_world([incident("I01", "B", 0, [("serious", "trauma")])], units=[])
+    p = agents()
+    events = w.start()
+    p.decide(w.snapshot(), events)
+    th = p.open_thread("admission", unit="X1")
+    p.pending_reserve["H1"] = {th: {"victims": ["I01-V1"], "round": 1, "due": 5}}
+    p.t = 4
+    p._conditional_timeouts()
+    assert replies(p, th) == []
+    p.t = 5
+    p._conditional_timeouts()
+    assert replies(p, th) == [("decline", "transfer not started in time")] and p.pending_reserve["H1"] == {}
+
+
+def test_a_load_aboard_is_exactly_the_victims_aboard():
+    w = make_world([incident("I01", "B", 0, [("serious", "trauma"), ("minor", "general")])],
+                   units=[UnitSpec("BLS1", "BLS", "A", "A")])
+    p = agents()
+    events = step_agents(w, p, w.start(), 1)
+    while not (w.units["BLS1"].state == "transporting"):
+        events = step_agents(w, p, events, w.t + 1)
+    load = p.loads["BLS1"]
+    assert sorted(load.victims) == ["I01-V1", "I01-V2"]
+    load.victims = ["I01-V1"]                              # a stale split: one victim aboard left out
+    p.view = w.snapshot()
+    p._sync_aboard(load)
+    assert load.victims == ["I01-V1", "I01-V2"]
+
+
+def test_guard_transfer_ready_checks_cooldown_pending_and_failed_threads():
+    p = agents()
+    p.t = 30
+    assert p.guard and p._transfer_ready("H1", "TH001")
+    p.cooldown[("transfer", "H1")] = 35
+    assert not p._transfer_ready("H1", "TH001")
+    p.cooldown.clear()
+    p.pending_reserve["H1"] = {"TH002": {"victims": ["V"], "round": 1, "due": 40}}
+    assert not p._transfer_ready("H1", "TH001")
+    p.pending_reserve["H1"] = {}
+    p.failed_conditional.add("TH001")
+    assert not p._transfer_ready("H1", "TH001") and p._transfer_ready("H1", "TH003")
+    assert AgentPolicy(LLMClient("off"), guard=False)._transfer_ready("H1", "TH001")

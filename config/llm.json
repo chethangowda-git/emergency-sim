@@ -2,5 +2,6 @@
   "mode": "off",
   "model": "gpt-4o-mini-2024-07-18",
   "temperature": 0,
-  "note": "Pinned snapshot for live runs (chosen for cost: about $0.02 per run). mode is the default when none is chosen; the dashboard and CLI pick off, live or replay per run. The key comes from OPENAI_API_KEY or the gitignored .env."
+  "llm_guard": true,
+  "note": "Pinned snapshot for live runs (chosen for cost: about $0.02 per run). mode is the default when none is chosen; the dashboard and CLI pick off, live or replay per run. The key comes from OPENAI_API_KEY or the gitignored .env. llm_guard (DESIGN 12.8): rules check the LLM's conditional offers and extra units; a run records it, and a replay uses the recorded setting."
 }

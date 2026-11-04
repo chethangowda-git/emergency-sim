@@ -9,6 +9,7 @@ from coordination.schemas import IAJudgment, IncidentReport, UnitCounts
 from coordination.tools import IncidentScope
 
 AGENT = "ia"
+GUARD_MAX_EXTRA_ALS = 1   # per incident (DESIGN 4.1)
 
 
 def units_needed(victims: list[dict], requires: str | None, team: str | None, cleared: bool) -> UnitCounts:
@@ -44,8 +45,9 @@ def care_counts(victims: list[dict]) -> dict[str, dict[str, int]]:
 
 
 class IncidentAssessmentAgent:
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(self, llm: LLMClient, guard: bool = False) -> None:
         self.llm = llm
+        self.guard = guard
 
     def rule_report(self, scope: IncidentScope, iid: str) -> IncidentReport:
         inc = scope.incident(iid)
@@ -66,7 +68,8 @@ class IncidentAssessmentAgent:
         if result.output is None:
             return report.model_copy(update={"decided_by": "fallback", "note": f"LLM fallback: {result.error}"})
         j: IAJudgment = result.output
-        needed = report.units_needed.model_copy(update={"ALS": report.units_needed.ALS + j.extra_als,
+        extra_als = min(j.extra_als, GUARD_MAX_EXTRA_ALS) if self.guard else j.extra_als
+        needed = report.units_needed.model_copy(update={"ALS": report.units_needed.ALS + extra_als,
                                                         "BLS": report.units_needed.BLS + j.extra_bls})
         return report.model_copy(update={"units_needed": needed, "flags": j.flags, "note": j.note,
                                          "decided_by": "llm"})

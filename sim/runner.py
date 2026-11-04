@@ -92,13 +92,14 @@ class Prepared:
 
 def prepare(seed: int, policy: str | Policy = "greedy", *, cfg: SimConfig | None = None,
             roads: RoadNetwork | None = None, places: dict | None = None, llm_mode: str | None = None,
-            replay_from: Path | None = None, llm: LLMClient | None = None, spawns: list[dict] = ()) -> Prepared:
+            replay_from: Path | None = None, llm: LLMClient | None = None, spawns: list[dict] = (),
+            llm_guard: bool | None = None) -> Prepared:
     cfg = cfg or default_config()
     roads = roads or load_roads(cfg)
     places = places or load_places()
     if isinstance(policy, str) and policy != "greedy" and llm is None:
         llm = make_llm(llm_mode, replay_from)
-    pol = make_policy(policy, llm) if isinstance(policy, str) else policy
+    pol = make_policy(policy, llm, llm_guard) if isinstance(policy, str) else policy
     scenario = generate(seed, cfg, roads, places)
     world = World(with_spawns(scenario, cfg, roads, list(spawns)), roads, cfg)
     return Prepared(seed, scenario, world, pol, llm, replay_from, list(spawns))
@@ -113,6 +114,8 @@ def save(prep: Prepared, runs_dir: Path = RUNS_DIR, run_id: str | None = None, l
     victims = incident_victims(world)
     llm_info = {"mode": llm.mode, "model": llm.model,
                 "replay_from": str(prep.replay_from) if prep.replay_from else None} if llm is not None else None
+    if llm_info is not None and hasattr(pol, "guard"):
+        llm_info["guard"] = pol.guard
     config = {"run_id": run_id, "seed": prep.seed, "policy": pol.name, "area": load_area()["name"],
               "llm": llm_info, "sim": world.cfg.to_dict()}
     if prep.spawns:
@@ -137,7 +140,7 @@ def run(seed: int, policy: str | Policy = "greedy", progress_cb: ProgressCb | No
         runs_dir: Path = RUNS_DIR, cfg: SimConfig | None = None, roads: RoadNetwork | None = None,
         places: dict | None = None, llm_mode: str | None = None, replay_from: Path | None = None,
         llm: LLMClient | None = None, light: bool = False, run_id: str | None = None,
-        spawns: list[dict] = ()) -> Path:
+        spawns: list[dict] = (), llm_guard: bool | None = None) -> Path:
     """Simulate one seed and save the run folder. Agent policies take an LLM mode: `off` (rules only),
     `live` (records every call) or `replay` from an earlier run folder. `spawns` are incidents placed
     during a live run (DESIGN 3.3), so a run with them can be reproduced headless.
@@ -145,6 +148,6 @@ def run(seed: int, policy: str | Policy = "greedy", progress_cb: ProgressCb | No
     A light run (evaluation) keeps only config, scenario, metrics and LLM calls; the full
     folder can be rebuilt exactly from them (rules are deterministic, LLM calls replay)."""
     prep = prepare(seed, policy, cfg=cfg, roads=roads, places=places, llm_mode=llm_mode,
-                   replay_from=replay_from, llm=llm, spawns=spawns)
+                   replay_from=replay_from, llm=llm, spawns=spawns, llm_guard=llm_guard)
     simulate(prep.world, prep.policy, progress_cb)
     return save(prep, runs_dir, run_id, light)

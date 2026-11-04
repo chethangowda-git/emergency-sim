@@ -133,6 +133,63 @@ The dominant pattern is the hospitals' conditional "after my transfer" offer, wh
 
 **Status:** the project's headline results are the rules-only ones. The LLM, as currently prompted and with these options, makes the agents worse on the primary metric. Nothing was tuned on seeds 1 to 20 after seeing this.
 
+## Why the LLM lowers the results, and the guard (development seeds 101 to 120)
+
+The live evaluation above is kept as recorded: tag `v1-live-eval` reproduces `eval-008` exactly. Everything in this section ran on the development seeds only (`runs/dev-evals/`, one live repeat per seed); seeds 1 to 20 were not touched.
+
+**The same gap on development seeds.** Rules-only agents got 159 of 204 criticals to care on time (82.3%), live LLM agents 124 (63.8%): 44 lost against rules only, 9 gained (`eval-001`, `eval-002`; 20 live runs, 0 failed, $0.41).
+
+**Which LLM choices cost criticals.** `tools/diagnostics/llm_losses.py` replays each live run with one kind of LLM choice turned back to the rule, and also adds only that kind to rules only. A diverged replay takes the model's answer to the most similar recorded question, so these are estimates; with nothing reverted the replay reproduces the live run, and with everything reverted the rules-only run (checked on all 20 seeds).
+
+| LLM choice | Lost criticals recovered by removing it alone (of 44) | Criticals on time with it removed (live: 124) | Rules only plus only this choice (rules: 159) |
+|---|---|---|---|
+| Extra units (Incident Assessment) | 28 | 147 | 154 |
+| "After transfer" offers (hospitals) | 26 | 146 | 156 |
+| Award plan, e.g. "spare the specialist" (Dispatch) | 17 | 134 | 162 |
+| Re-ranking incidents (Dispatch) | 0 | 119 | 156 |
+| Shortfall plans, other admission, transfer and staff answers | 0 | 124 | 159 |
+
+Each choice alone costs only 3 to 5 criticals; together they cost 35. 28 of the 44 lost criticals were never carried by any ALS.
+
+**The mechanism: two coordination bugs that only the LLM's choices reached** (rules never make an "after transfer" offer):
+
+- **B1, conditional awards overwritten.** A hospital kept one pending conditional award; a second award to the same hospital overwrote the first, which then never got an answer, with no timeout. 958 conditional awards, only 26 transfers started, 92 awards overwritten (counted with a one-off hook), 84 loads still "awarded" at the end of their runs (18,689 load-minutes stuck "awarded" for 15+ minutes; rules only: 0). An ALS in a stuck load stays on scene, and other ALS units wait there too because a critical they could carry is still waiting. With 3 ALS in the fleet and the model asking for 100 extra ALS over 20 runs, one stuck scene could hold the whole ALS fleet (seed 119: all 3 at the school bus fire from minute 120 to the end, 6 criticals never picked up).
+- **B2, split loads aboard one unit.** Splitting a load whose victims were already aboard left the other victim at a hospital door with no reservation, while the load negotiated for a victim already delivered (1,751 unit-minutes with the LLM, 459 with rules only).
+- **Delayed escalation** follows from B1: a conditional offer counts as in time, so a critical relying on it does not escalate (111 escalations with the LLM, 293 with rules only).
+
+**Fixes** (DESIGN 5.2 and 8): each conditional award is tracked on its own negotiation and confirmed when its transfer starts, or declined if the transfer cannot start or has not started one round after the condition's time. The condition's time is now when a transfer can actually start, 11 minutes after the offer (6 minutes of messages plus the 5-minute preparation; it was 5). Victims aboard one unit are never split, and a renegotiation covers exactly the victims aboard. B2 also changes rules-only runs: 158 instead of 159 criticals on time on the development seeds (81.8%, `eval-003`).
+
+**Guard** (`llm_guard`, on by default; DESIGN 4.1 to 4.4 and 12.8). G1: a hospital offers "after transfer" only if a transfer could start now, and not again in a negotiation where one did not happen; Dispatch counts a conditional offer as in time only with 15 minutes of slack, otherwise the patient escalates. G2: at most 1 extra ALS per incident; extra units are filled last, from free units, and never cause a shortfall plan.
+
+**Free estimates** (recorded `eval-002` calls replayed under the new code; no API calls):
+
+| Development seeds 101 to 120 | Criticals on time | Mean % |
+|---|---|---|
+| Rules only (new code) | 158 of 204 | 81.8 |
+| Live as recorded (old code) | 124 | 63.8 |
+| B1 + B2 | 140 | 72.9 |
+| B1 + B2 + G1 + G2 | 160 | 82.4 |
+| ... + G3 (re-rank only within a 15-minute band) | 159 | 82.1 |
+| ... + G4 (non-earliest award only if criticals keep their earliest arrival) | 160 | 82.4 |
+
+G3 and G4 do not help, so they are not implemented.
+
+**Live check, guard on** (`eval-004`; 20 live runs, 0 failed, 2,705 calls, $0.39):
+
+| Development seeds 101 to 120 | Greedy | Rules only (new code) | Live LLM, before (old code) | Live LLM, guard on |
+|---|---|---|---|---|
+| Criticals on time | 54.7% | **81.8%** | 63.8% | **80.7%** |
+| Unserved criticals per run | | 0.10 | 2.05 | 0.00 |
+| Wins / ties / losses vs greedy | | 14 / 5 / 1 | 12 / 5 / 3 | 13 / 6 / 1 |
+| Wins / ties / losses vs rules only | | | | 2 / 13 / 5 |
+| Victims delivered | | 29.1 | 24.9 | 28.9 |
+| Escalations per run | | 14.8 | 5.5 | 15.6 |
+| Decided by rule / LLM / fallback | | 100 / 0 / 0% | | 88.2 / 11.2 / 0.6% |
+
+With the fixes and the guard, live LLM agents are about level with rules only (1.1 points lower, 13 of 20 seeds tied) instead of 18 points lower. The LLM no longer hurts, but it does not yet help either. Replays of guarded live runs reproduce their metrics and calls exactly.
+
+**Still open.** B3: a hospital vehicle doing an inter-hospital transfer whose reservation is broken by a walk-in waits at the receiving hospital's door with no renegotiation (transfers have no load); seen in 3 development seeds, for 200 to 293 minutes each. Not fixed yet.
+
 ## Reproduce
 
 ```bash
@@ -142,4 +199,11 @@ python -m cli eval --seeds 1-20                                                #
 python -m tools.diagnostics.llm_choices runs/seed42-agents-012                  # LLM vs rule, with counterfactuals
 python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3   # the live evaluation, replayed
 python -m tools.diagnostics.live_vs_rules --live eval-008 --rules eval-007        # the live vs rules-only table
+python -m tools.diagnostics.llm_losses --live eval-002 --estimate --evals-dir runs/dev-evals         # fixes and guards
+# the loss attribution and stuck counts above, on the code eval-002 was run with:
+git worktree add /tmp/v1 v1-live-eval && cp tools/diagnostics/llm_losses.py /tmp/v1/tools/diagnostics/
+mkdir -p /tmp/v1/runs && ln -s "$PWD/runs/dev-evals" /tmp/v1/runs/dev-evals
+(cd /tmp/v1 && python -m tools.diagnostics.llm_losses --live eval-002 --rules eval-001)
 ```
+
+Only the summaries of `runs/dev-evals/` are committed (settings, results, summary); the run folders with the recorded LLM calls stay local, so the two `llm_losses` commands need them.

@@ -146,3 +146,21 @@ def test_real_bases_are_public_fire_stations_one_unit_type_per_station():
             assert all(fire[u.base] == u.base_node for u in mine)
             assert len({u.base for u in mine}) == len(mine)
         assert all(hospitals[u.base] == u.base_node for u in units if u.kind == "ALS")
+
+
+def test_llm_guard_is_recorded_and_a_replay_keeps_the_recorded_setting(tmp_path):
+    import json as _json
+    from coordination.llm import LLMClient
+    from policies.registry import llm_guard_for, make_llm
+    from sim.runner import run
+    kw = {"runs_dir": tmp_path, "cfg": SMALL, "roads": roads(), "places": PLACES, "light": True}
+    out = run(5, "agents", llm=LLMClient("off"), llm_guard=False, **kw)
+    assert _json.loads((out / "config.json").read_text())["llm"]["guard"] is False
+    assert llm_guard_for(make_llm("replay", out)) is False
+    out = run(5, "agents", llm=LLMClient("off"), **kw)
+    assert _json.loads((out / "config.json").read_text())["llm"]["guard"] is True      # config/llm.json default
+    old = _json.loads((out / "config.json").read_text())
+    del old["llm"]["guard"]
+    (out / "config.json").write_text(_json.dumps(old))
+    assert llm_guard_for(make_llm("replay", out)) is False          # recorded before the guard existed
+    assert llm_guard_for(LLMClient("off")) is True

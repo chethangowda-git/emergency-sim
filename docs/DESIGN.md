@@ -227,7 +227,7 @@ The Arbiter appears as "Resolver" on the presentation slides; it is the same age
 3. Urgency: minutes left until the earliest deadline among waiting victims, and the number of victims at risk of missing it.
 4. Care needed: counts by care need and severity, so hospitals can be pre-alerted.
 
-**LLM judgment:** reads the description and adds what rules miss (e.g. "school bus: likely children, flag pediatric care"; "heavy smoke: more burns likely"; "rush-hour highway: expect slower travel"). It may adjust the unit request, with a one-line reason.
+**LLM judgment:** reads the description and adds what rules miss (e.g. "school bus: likely children, flag pediatric care"; "heavy smoke: more burns likely"; "rush-hour highway: expect slower travel"). It may adjust the unit request, with a one-line reason. **Guard** (`llm_guard`, section 12.8): at most 1 extra ALS per incident, and Dispatch fills extra units last (section 4.2).
 
 **Sends:** `unit_request` to Dispatch, and `incident_update` when something changes (victims picked up, deadline under 15 minutes, scene report differs).
 
@@ -246,6 +246,8 @@ Incidents are ranked by **minutes left** (fewest first), then by victims at risk
 - Several incidents competing for the same units.
 - Timing: don't rush the nearest unit to a scene it will only wait at (e.g. fire clearance not done).
 - Shortfalls: send what is available, queue, ask hospitals for vehicles, or redirect.
+
+**Guard on extra units** (`llm_guard`, section 12.8): units Incident Assessment's LLM judgment adds on top of the rule-computed needs are filled last, from units still free after every incident's rule needs (and the "send what is available" pass). They never cause a shortfall plan: no wait, redirect, swap, mutual aid or pre-alert for an extra unit.
 
 **Process for each request:**
 
@@ -283,7 +285,7 @@ It informs Incident Assessment of the expected delay.
 1. Use free real capacity.
 2. Release patients who are `ready_for_release`, **only for a request that includes a critical** (non-criticals use free capacity or wait), and **each ready patient is promised in at most one open offer**: until that offer's award arrives or its round ends (3 minutes at most), the patient cannot back another offer.
 3. Stabilize and transfer a transferable patient (routine transfer, section 5.5), using its own vehicle.
-4. Make a conditional offer (fewer patients, a later time, or "after my transfer completes").
+4. Make a conditional offer (fewer patients, a later time, or "after my transfer completes"). An "after transfer" offer's time is when the transfer can start: 6 minutes of messages (the award, the transfer request and reply, the choice of receiver and its reservation) plus the 5-minute preparation, so 11 minutes after the offer. **Guard** (`llm_guard`, section 12.8): the offer is made only if a transfer could start now (a transferable patient, an idle vehicle, not within the hospital's 10-minute transfer cooldown, no other conditional award pending at this hospital) and never again in a negotiation where a transfer did not happen.
 5. Decline, with a reason.
 
 **Beds free but no staff:** it weighs the delay against the patient's deadline ("bed now, treatment starts in 25 minutes" is fine for a minor, not a critical), or asks other hospitals for staff (section 5.6).
@@ -302,7 +304,7 @@ It informs Incident Assessment of the expected delay.
 
 **Triggers (the only times it runs):**
 
-1. No admission offer meets a patient's deadline.
+1. No admission offer meets a patient's deadline. **Guard** (`llm_guard`, section 12.8): a conditional offer meets a deadline only with at least 15 minutes of slack after its condition's time; a patient relying on a tighter one escalates.
 2. A negotiation reaches 3 rounds without agreement while a deadline is at risk.
 3. A reroute is needed but no hospital accepts in time, or a second reroute is needed for the same trip.
 4. An urgent staff loan or transfer is needed to meet a deadline.
@@ -339,8 +341,8 @@ Dispatch -> IA: accept or decline the pushback
 
 1. Dispatch sends a `pre_alert` and one `admission_cfp` (call for proposals) to every capable hospital: victims (severity, care need), deadlines, ETA from the unit to each hospital, and whether any other hospital is reachable in time.
 2. Each hospital replies with an `admission_offer`: accept N, conditional (count, time, "after transfer"), or decline with a reason.
-3. Dispatch awards (`admission_award`), possibly splitting victims across hospitals, or counters (`admission_counter`). The awarded hospital places a firm reservation.
-4. If the awarded hospital declines (its capacity was taken since its offer), Dispatch awards the next valid offer of the same round at once. If none is left, a critical with under 15 minutes of slack escalates to the Arbiter at once; otherwise the decline counts as a round and the next round starts.
+3. Dispatch awards (`admission_award`), possibly splitting victims across hospitals, or counters (`admission_counter`). The awarded hospital places a firm reservation. Victims already aboard one unit are never split: they go to one hospital together or wait for the next round, and a renegotiation (after a broken reservation or arriving to no slot) covers exactly the victims aboard. A conditional award is tracked on its own negotiation: the hospital confirms it with the firm reservation when the transfer starts, and declines it ("transfer did not happen") if the transfer cannot start or has not started one round after the condition's time.
+4. If the awarded hospital declines (its capacity was taken since its offer, or a conditional award's transfer did not happen), Dispatch awards the next valid offer of the same round at once. If none is left, a critical with under 15 minutes of slack escalates to the Arbiter at once; otherwise the decline counts as a round and the next round starts.
 5. Max 3 rounds. If no offer meets a deadline: escalate to the Arbiter.
 
 ### 5.3 Mutual aid vehicles (Dispatch and hospitals)
@@ -419,6 +421,8 @@ The world does not pause during negotiation: deadlines keep running and units ke
 | Rounds in one negotiation | 3 | Take the best offer, or escalate if a deadline is at risk |
 | Declined award | Counts as a round | Award the next valid offer of the same round; if none, a critical with under 15 minutes of slack escalates at once |
 | No reply | 1 round | Counts as a decline |
+| Conditional award not confirmed | Its condition's time plus 1 round | Declined by the hospital ("transfer not started in time"); counts as a declined award. Each conditional award is tracked on its own negotiation, so several can be pending at one hospital |
+| Victims aboard one unit | One destination | Never split across hospitals; a renegotiation covers exactly the victims aboard |
 | Reroutes per unit trip | 1 | Further changes only through the Arbiter |
 | Redirects of an ALS unit | Once per trip | The abandoned job goes to the front of the queue |
 | Arbiter decisions | Final | No renegotiation |
@@ -497,6 +501,7 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Measured scale (12 incidents, `gpt-4o-mini-2024-07-18`): about 150 to 250 LLM calls per run (seed 42: 155 calls, of which 74 hospital admission offers, 47 Dispatch unit plans, 19 awards and 12 incident assessments; about 132,000 input and 8,400 output tokens; about 4 minutes. Before hospital offers carried their details, the same seed took 243 calls). Each live call records its token usage in `llm_calls.jsonl`.
 6. A live run's speed, pauses and one-minute steps never change its outcome: pacing only adds waiting between minutes. A finished live run saves exactly the files a headless run of the same seed, policy and placed incidents saves.
 7. API errors never become silent rule fallbacks in reported results. A live call retries rate limits (honouring `Retry-After`), connection errors, timeouts and server errors with exponential backoff and jitter; quota and billing errors are not retried. In an evaluation, a run with any remaining API error (`llm_error`) is run again, up to 3 attempts in all; if it still fails it is listed in `failed.jsonl` and in the summary, and left out of the results (a replay leaves it out too). Agents SDK tracing is off; `llm_calls.jsonl` is the record. Evaluation runs may go in parallel processes; `results.jsonl` is written in plan order.
+8. **LLM proposes, rules guard** (`llm_guard` in `config/llm.json`, default on; recorded in each agent run's `config.json`, and a replay uses the recorded setting, off for runs recorded before it existed). The LLM still chooses among the rule-built options, but rules check the two choices the development-seed diagnosis found costly (docs/FINDINGS.md): "after transfer" offers (section 4.3 rung 4: only when a transfer could start; section 4.4 trigger 1: at least 15 minutes of slack) and extra units (section 4.1: at most 1 extra ALS; section 4.2: filled last, never a shortfall). With the LLM off the guard changes nothing, because rules never choose these.
 
 ---
 
