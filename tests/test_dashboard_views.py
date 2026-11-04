@@ -76,7 +76,7 @@ def test_cards_cover_every_agent_with_hospital_mood_and_last_decision():
     cards = av.agent_cards(log.events, MINUTE, 3)
     assert [c["id"] for c in cards] == ["ia", "dispatch", "H1", "H2", "arbiter"]
     h1 = cards[2]
-    assert (h1["name"], h1["mood"], h1["er"]) == ("H1 North", "protective", "4/4")
+    assert (h1["name"], h1["mood"], h1["er"]) == ("H1 South End General", "protective", "4/4")   # display name
     assert av.decision_text(cards[1]["decision"]) == "min 3 · award (rule): r"
     assert av.decision_text(cards[4]["decision"]) == "no decision yet"
 
@@ -215,6 +215,7 @@ def test_hospitals_show_walk_ins_now_in_the_er():
     h = {"id": "H1", "name": "North", "lat": 42.0, "lon": -71.0, "er_used": 3, "er_slots": 4, "reserved": 0,
          "waiting_for_staff": 0, "ward_used": 0, "ward_beds": 6, "boarding": 0,
          "patients": [{"walk_in": True}, {"walk_in": False}, {"walk_in": True}]}
-    row = map_view.hospital_rows({"hospitals": [h]})[0]
-    assert row["walk_ins"] == "Walk-in patients (2)" and "2 walk-in patients in the ER" in row["label"]
+    row = map_view.hospital_rows({"hospitals": [h]}, {"H1": ["H1-TV1"]})[0]
+    assert "Walk-in patients in the ER: 2" in row["label"]          # on hover, so it never overlaps a badge
+    assert "Vehicles parked here: H1-TV1" in row["label"]
     assert map_view.walk_ins_in_er({**h, "patients": []}) == 0

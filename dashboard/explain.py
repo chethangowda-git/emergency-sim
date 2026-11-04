@@ -10,6 +10,7 @@ from collections import Counter
 from html import escape
 
 from coordination.tools import mood_for
+from dashboard.names import hospital_name
 
 UNIT_NAMES = {"ALS": "Paramedic ambulance (ALS)", "BLS": "Basic ambulance (BLS)", "FIRE": "Fire team",
               "RESCUE": "Rescue team", "HV": "Hospital transport vehicle"}
@@ -183,8 +184,8 @@ def incident_card_html(card: dict, focus: bool = False) -> str:
     chip = f"🔴 {card['criticals']} critical · {left}" if card["criticals"] else f"🟠 {left}"
     bar = "".join(f"<span class='pstep{' on' if done else ''}' title='{s}'></span>" for s, done in zip(STEPS, card["steps"]))
     here = next((s for s, done in zip(STEPS, card["steps"]) if not done), STEPS[-1])
-    rows = "".join(f"<div class='vrow'><span class='sev {r['severity']}'>{r['severity']}</span> {r['id']} · "
-                   f"{escape(r['where'])} <span class='st {r['status'].replace(' ', '-')}'>{tip(r['status'])}</span></div>"
+    rows = "".join(f"<div class='vrow' title='{r['id']}'><span class='sev {r['severity']}'>{r['severity']}</span> "
+                   f"{r['care']} · {escape(r['where'])} <span class='st {r['status'].replace(' ', '-')}'>{tip(r['status'])}</span></div>"
                    for r in card["victims"])
     neg = "".join(f"<div class='neg-link'>🤝 {escape(n)}</div>" for n in card["negotiations"])
     cls = "icard" + (" changed" if card["changed"] else "") + (" focus" if focus else "")
@@ -202,7 +203,7 @@ def hospital_cards(run: dict, minute: int) -> list[dict]:
     out = []
     for h in state["hospitals"]:
         mine = [e for e in offers if e["agent"] == h["id"]]
-        out.append({"id": h["id"], "name": h["name"], "mood": mood_for(h["utilization"]),
+        out.append({"id": h["id"], "name": hospital_name(h["id"], h["name"]), "mood": mood_for(h["utilization"]),
                     "er": f"{h['er_used']}/{h['er_slots']}" + (f" (+{h['reserved']})" if h["reserved"] else ""),
                     "patients": [{"id": p["id"], "severity": p["original_severity"], "status": p["status"].replace("_", " "),
                                   "walk_in": p["walk_in"]} for p in h["patients"]],
@@ -214,7 +215,7 @@ def hospital_cards(run: dict, minute: int) -> list[dict]:
 def hospital_card_html(h: dict) -> str:
     patients = ", ".join(f"{p['id']} ({p['severity']}{', walk-in' if p['walk_in'] else ''}: {p['status']})"
                          for p in h["patients"]) or "no patients"
-    offers = "".join(f"<div class='ev'><span class='ev-t'>{t}</span> {badge(by)} {escape(reason)}</div>"
+    offers = "".join(f"<div class='ev'><span class='ev-t'>min {t}</span> {badge(by)} {escape(reason)}</div>"
                      for t, by, reason in h["offers"])
     return (f"<div class='hcard'><b>{h['id']} {escape(h['name'])}</b> · mood {h['mood']} · {tip('ER', 'ER')} {h['er']}"
             f" · {tip('Walk-ins', 'walk-ins')} so far {h['walk_ins']}<div class='desc'>{escape(patients)}</div>"

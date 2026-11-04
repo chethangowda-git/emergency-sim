@@ -101,11 +101,13 @@ Hospitals sit at real hospital locations in the chosen area (3 chosen from OpenS
 
 Default hospitals:
 
-| ID | Name | Capabilities | ER slots | Ward beds | Doctors | Nurses |
-|---|---|---|---|---|---|---|
-| H1 | Central Trauma Center | trauma, burns, general | 6 | 10 | 3 | 3 |
-| H2 | Northside General | trauma, general | 4 | 6 | 2 | 2 |
-| H3 | Eastside Community | burns, general | 4 | 6 | 2 | 2 |
+| ID | Name (internal) | Shown as | Capabilities | ER slots | Ward beds | Doctors | Nurses |
+|---|---|---|---|---|---|---|---|
+| H1 | Central Trauma Center | South End General | trauma, burns, general | 6 | 10 | 3 | 3 |
+| H2 | Northside General | Riverside Medical | trauma, general | 4 | 6 | 2 | 2 |
+| H3 | Eastside Community | Muddy River Community | burns, general | 4 | 6 | 2 | 2 |
+
+The dashboard shows neutral display names that fit each site's place on the map (H1 by the South End, H2 north of the Charles, H3 by the Muddy River). They are display only (`dashboard/names.py`): the simulator, IDs and run files keep the internal names, so every run, old or new, shows the same names and replays byte for byte.
 
 Each ER patient needs one doctor with the matching skill and one nurse. Patients wait in the ER if staff are unavailable.
 
@@ -544,18 +546,18 @@ All plain-language text is filled into templates from the logged run (timeline, 
 
 | Panel | Contents |
 |---|---|
-| Map | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without, grey when done) sized by victims; units glide along streets (several frames per simulated minute) with a short fading trail and their remaining route dashed; hospitals show ER use and "Walk-in patients (N)". Clicking an incident or a unit opens that incident's card; a highlighted incident gets a ring, and its units and routes are drawn in yellow |
+| Map | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without, grey when done) sized by victims; units glide along streets (several frames per simulated minute) with a short fading trail and their remaining route dashed; hospitals show their name above the H and ER use below it; walk-ins in the ER, ward and staff details, and hospital vehicles parked at their own hospital are in the hover tooltip. **No label sits on another:** hospital labels and incident circles are placed first, then each unit badge takes the first free spot on or beside its position (right, left, stacking outwards), measured in screen pixels at the map's zoom. Clicking an incident or a unit opens that incident's card; a highlighted incident gets a ring, and its units and routes are drawn in yellow |
 | KPI cards | Criticals on time, unserved criticals, average report-to-care time, victims delivered |
 | Units | Units free by type, on one line |
 | Hospitals | One compact row per hospital with an ER bar: ER use (and reservations), free doctors, walk-ins |
 | Feed: Incidents (default) | One card per incident, least time left first; finished incidents collapse to one line at the bottom. Each card: title, a chip with open criticals and minutes left, a 5-step progress bar (reported, units sent, scene cleared, transporting, all at hospital), one row per victim (where they are, which unit, ETA) with **on track** (15 minutes or more to spare), **tight** (less) or **late**, and its admission negotiations ("1 round, awarded to H3, reserved"). Clicking a card title highlights the incident on the map |
-| Feed: Negotiations | One thread per negotiation, titled as the question ("Where should I07's 2 serious victims go?"), with an outcome badge (agreed / escalated to referee / no deal / in progress), a one-line outcome, then one sentence per message, rounds marked and the reason in grey ("AI:" when the language model gave it) |
+| Feed: Negotiations | List + detail. The list (left) has one entry per negotiation: the question as its title ("Where should I02's critical victim go?"), a status badge (agreed / escalated to referee / no deal / in progress; for unit requests: units sent / short of units), the minute it started, and while it is open a chip per hospital: waiting / offered / offers after a transfer / awarded / accepted / declined / can't treat / chosen by referee, with the reason on hover. Finished negotiations show only title and outcome; clicking one opens it. The detail (right) shows the selected negotiation, by default the newest active one: title, outcome, chips, then one bubble per message, with rounds marked and the reason in grey ("AI:" when the language model gave it). A message sent to several hospitals is one bubble ("Dispatch → H1, H2, H3: Heads-up and request: can you take I02's critical victim?"), with the pre-alert folded into the request. Times read "min 97"; victims read "I02's critical victim"; victim and thread IDs are kept in tooltips |
 | Feed: Decisions | One card per agent decision: what it saw, what it decided, why, and the other option (the rule's choice, from the recorded LLM call). Badges: Rule, AI judgment, AI blocked by guard (what the AI suggested and why the guard limited it), Guard (an option the guard kept from the AI, or a conditional offer it counted as late), Fallback. By default only where the AI differed from the rule, a guard step, a fallback or a referee ruling; a toggle shows every decision. Repeated guard steps in one negotiation become one card with a count |
 | Feed: Hospitals | Each hospital's mood, ER use, patients, latest offers and walk-ins so far |
 | Feed: Log | The raw event timeline, including messages and decisions, for debugging |
 | Compare | KPI comparison table at the minute (baseline, agents, change, better or worse), units free and ER use for both |
 
-A filter (🔍) limits the feed to one incident or one agent. Cards and messages from the last minute are marked, so what changed stands out. All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
+The feed's scroll areas fill the window down to its bottom edge in every tab. A filter (🔍) limits the feed to one incident or one agent. Cards and messages from the last minute are marked, so what changed stands out. All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
 
 ### 13.3 Live runs
 

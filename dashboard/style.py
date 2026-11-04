@@ -65,7 +65,7 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .thread {border-bottom: 1px solid rgba(128,128,128,.25); padding: 5px 0; font-size: 0.78rem;}
 .verdict {font-size: 0.68rem; padding: 0 6px; border-radius: 9px; margin-right: 4px; background: rgba(128,128,128,.3);}
 .v-agreed {background: rgba(46,125,50,.4);} .v-escalated {background: rgba(123,31,162,.45);}
-.v-no {background: rgba(198,40,40,.4);} .v-in {background: rgba(42,120,214,.35);}
+.v-no {background: rgba(198,40,40,.4);} .v-in {background: rgba(42,120,214,.35);} .v-units {background: rgba(46,125,50,.4);} .v-short {background: rgba(230,120,0,.4);}
 .round {font-size: 0.66rem; opacity: 0.6; margin: 3px 0 0 0; text-transform: uppercase; letter-spacing: 0.04em;}
 .bubble {margin: 2px 0 2px 8px; padding: 2px 8px; border-radius: 8px; background: rgba(128,128,128,.12);}
 .bubble.new {background: rgba(42,120,214,.18);}
@@ -78,6 +78,22 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .intro {border: 1px solid rgba(42,120,214,.5); border-radius: 10px; padding: 10px 16px; margin: 8px 0;}
 .intro h3 {margin: 0 0 4px 0;}
 div[data-testid="stButton"] button[kind="tertiary"] {padding: 0; min-height: 1.4rem; font-weight: 600;}
+.st-key-feedbox, .st-key-neglist, .st-key-negdetail,
+div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdetail) {
+    height: calc(100vh - 452px) !important; max-height: calc(100vh - 452px) !important; min-height: 220px;
+    flex: 0 0 calc(100vh - 452px) !important;}
+.st-key-neglist div[data-testid="stButton"] button[kind="tertiary"] {text-align: left; font-size: 0.78rem;
+    line-height: 1.25; justify-content: flex-start;}
+.st-key-neglist div[data-testid="stVerticalBlock"] {gap: 0.1rem;}
+.tentry {font-size: 0.72rem; margin: -2px 0 6px 0; padding-bottom: 4px; border-bottom: 1px solid rgba(128,128,128,.2);}
+.tentry.new .verdict {box-shadow: 0 0 0 1px #2a78d6;}
+.tdetail {font-size: 0.78rem;}
+.chips {margin: 4px 0;}
+.hchip {display: inline-block; font-size: 0.68rem; padding: 0 6px; border-radius: 9px; margin: 1px 2px 1px 0;
+        background: rgba(128,128,128,.3); cursor: help;}
+.c-waiting {background: rgba(42,120,214,.3);} .c-offered {background: rgba(46,125,50,.35);}
+.c-awarded, .c-accepted {background: rgba(46,125,50,.6);} .c-declined, .c-cant {background: rgba(198,40,40,.4);}
+.c-referee {background: rgba(123,31,162,.45);} .c-later {background: rgba(230,120,0,.35);}
 </style>
 """
 

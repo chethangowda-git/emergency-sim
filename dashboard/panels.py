@@ -6,6 +6,7 @@ from html import escape
 import pandas as pd
 
 from dashboard.explain import tip
+from dashboard.names import hospital_label
 
 FREE = ("idle", "returning")
 KIND_NAMES = {"ALS": "ALS ambulances", "BLS": "BLS ambulances", "FIRE": "Fire teams", "RESCUE": "Rescue teams",
@@ -27,7 +28,7 @@ def hospital_table(minute: dict) -> pd.DataFrame:
         busy_docs = sum(1 for d in h["doctors"] if d["patients"])
         busy_nurses = sum(1 for n in h["nurses"] if n["patients"])
         rows.append({
-            "Hospital": f"{h['id']} {h['name']}",
+            "Hospital": hospital_label(h),
             "ER": f"{h['er_used']}/{h['er_slots']}",
             "Reserved": h["reserved"],
             "Waiting for staff": h["waiting_for_staff"],
@@ -210,7 +211,7 @@ def hospital_line(h: dict) -> dict:
     free_doctors = sum(1 for d in h["doctors"] if len(d["patients"]) < d["max"])
     walk_ins = sum(1 for p in h.get("patients", []) if p["walk_in"])
     load = h["er_used"] / h["er_slots"] if h["er_slots"] else 0.0
-    return {"name": f"{h['id']} {h['name']}", "er": f"{h['er_used']}/{h['er_slots']}", "reserved": h["reserved"],
+    return {"name": hospital_label(h), "er": f"{h['er_used']}/{h['er_slots']}", "reserved": h["reserved"],
             "load_pct": round(100 * min(1.0, load)), "level": "full" if load >= 1 else "busy" if load >= 0.6 else "ok",
             "free_doctors": free_doctors, "walk_ins": walk_ins}
 

@@ -10,6 +10,7 @@ from collections import defaultdict
 from html import escape
 
 from coordination.tools import mood_for
+from dashboard.names import hospital_name
 
 AGENT_NAMES = {"ia": "Incident Assessment", "dispatch": "Dispatch", "arbiter": "Arbiter"}
 REQUESTS = ("unit_request", "incident_update", "admission_cfp", "admission_counter", "admission_award",
@@ -29,7 +30,7 @@ def agent_ids(minute: dict) -> list[str]:
 def agent_name(agent: str, minute: dict | None = None) -> str:
     if agent in AGENT_NAMES:
         return AGENT_NAMES[agent]
-    names = {h["id"]: h["name"] for h in minute["hospitals"]} if minute else {}
+    names = {h["id"]: hospital_name(h["id"], h["name"]) for h in minute["hospitals"]} if minute else {}
     return f"{agent} {names[agent]}" if agent in names else agent
 
 

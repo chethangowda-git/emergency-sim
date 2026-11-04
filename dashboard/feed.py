@@ -49,7 +49,7 @@ def calls_of(key: str, n_events: int, _run: dict) -> dict[int, dict]:
 def decisions_at(key: str, minute: int, show_all: bool, _run: dict) -> list[dict]:
     incidents = {i["id"]: i for i in _run["timeline"][minute]["incidents"]}
     return explain_agents.decision_cards(_run["events"], minute, incidents, calls_of(key, len(_run["events"]), _run),
-                                         show_all)
+                                         show_all, severities(_run))
 
 
 @st.cache_data(max_entries=600, show_spinner=False)
@@ -71,9 +71,12 @@ def render(key: str, run: dict, minute: int, agents: bool, height: int) -> None:
     feed = tabs.segmented_control("Feed", feeds, key="feed", required=True, label_visibility="collapsed",
                                   help=" · ".join(f"{f}: {HELP[f]}" for f in feeds))
     incident, agent = filters(filt, run, minute, agents)
-    with st.container(height=height, border=True):
-        {"Incidents": incidents_tab, "Negotiations": negotiations_tab, "Decisions": decisions_tab,
-         "Hospitals": hospitals_tab, "Log": log_tab}[feed](key, run, minute, incident, agent)
+    if feed == "Negotiations":
+        negotiations_tab(key, run, minute, incident, agent, height)
+        return
+    with st.container(height=height, border=True, key="feedbox"):
+        {"Incidents": incidents_tab, "Decisions": decisions_tab, "Hospitals": hospitals_tab,
+         "Log": log_tab}[feed](key, run, minute, incident, agent)
 
 
 def filters(col, run: dict, minute: int, agents: bool) -> tuple[str | None, str | None]:
@@ -108,14 +111,32 @@ def incidents_tab(key: str, run: dict, minute: int, incident: str | None, agent:
         st.markdown(explain.incident_card_html(c, focus == c["id"]), unsafe_allow_html=True)
 
 
-def negotiations_tab(key: str, run: dict, minute: int, incident: str | None, agent: str | None) -> None:
+def pick_thread(thread_id: str) -> None:
+    st.session_state.neg_pick = thread_id
+
+
+def negotiations_tab(key: str, run: dict, minute: int, incident: str | None, agent: str | None, height: int) -> None:
+    """List + detail: threads on the left (title, status, hospital chips), the chosen one's conversation on
+    the right. The newest active thread is shown until another is picked."""
     views = [v for v in threads_at(key, minute, run) if incident in (None, v["incident"])
              and (agent is None or agent in v["agents"])]
     if not views:
-        st.caption("No negotiation yet at this minute.")
+        with st.container(height=height, border=True, key="feedbox"):
+            st.caption("No negotiation yet at this minute.")
         return
-    st.markdown("".join(explain_agents.thread_html(v, full=i < 3) for i, v in enumerate(views[:40])),
-                unsafe_allow_html=True)
+    ids = [v["id"] for v in views]
+    chosen = st.session_state.get("neg_pick")
+    chosen = chosen if chosen in ids else explain_agents.default_thread(views)
+    left, right = st.columns([2, 3], gap="small")
+    with left.container(height=height, border=True, key="neglist"):
+        for v in views[:60]:
+            mark = "▸ " if v["id"] == chosen else ""
+            st.button(f"{mark}{v['title']}", key=f"th_{v['id']}", type="tertiary", on_click=pick_thread,
+                      args=(v["id"],), help=f"Show this conversation ({v['id']})")
+            st.markdown(explain_agents.thread_entry_html(v), unsafe_allow_html=True)
+    with right.container(height=height, border=True, key="negdetail"):
+        st.markdown(explain_agents.thread_detail_html(next(v for v in views if v["id"] == chosen)),
+                    unsafe_allow_html=True)
 
 
 def decisions_tab(key: str, run: dict, minute: int, incident: str | None, agent: str | None) -> None:

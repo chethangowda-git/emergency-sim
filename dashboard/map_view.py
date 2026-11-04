@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import pydeck as pdk
 
+from dashboard.names import hospital_label
 from sim.roads import haversine_m, position_on
 
 UNIT_STYLE = {
@@ -23,7 +24,6 @@ UNIT_STYLE = {
 }
 HOSPITAL_HEX = "#00796B"
 HOSPITAL_RGB = [0, 121, 107]
-WALK_IN_RGB = [69, 90, 100]
 INCIDENT_RED, INCIDENT_AMBER, INCIDENT_DONE = [211, 47, 47, 210], [255, 160, 0, 210], [158, 158, 158, 110]
 LOAD_OK, LOAD_BUSY, LOAD_FULL = [46, 125, 50], [230, 120, 0], [198, 40, 40]
 FREE_STATES = ("idle",)
@@ -80,24 +80,74 @@ def trail(trip: dict, elapsed: float, t: float, here: tuple[float, float]) -> di
             "times": [trip["depart_t"] + c for c, _ in pts] + [t]}
 
 
-def _spot(lat: float, lon: float) -> tuple[float, float]:
-    return (round(lat, 4), round(lon, 4))
+# ----- label placement: nothing sits on top of anything else -----
+
+LABEL_CHAR_PX = 7.4     # deck.gl's default 12 px monospace font
+GAP = 3
 
 
-def badge_offsets(units: list[dict], landmarks: set[tuple[float, float]]) -> dict[str, list[int]]:
-    """Pixel offsets so badges never cover a hospital, an incident or each other."""
-    groups: dict[tuple, list[dict]] = defaultdict(list)
-    for u in units:
-        groups[_spot(u["lat"], u["lon"])].append(u)
+def to_px(lat: float, lon: float, zoom: float) -> tuple[float, float]:
+    """Web Mercator pixel position at this zoom (only differences between points matter)."""
+    scale = 256 * 2 ** zoom
+    siny = math.sin(math.radians(lat))
+    return ((lon + 180) / 360 * scale, (0.5 - math.log((1 + siny) / (1 - siny)) / (4 * math.pi)) * scale)
+
+
+def text_box(x: float, y: float, text: str, dy: float = 0, h: float = 18) -> tuple[float, float, float, float]:
+    w = LABEL_CHAR_PX * len(text) + 10
+    return (x - w / 2, y + dy - h / 2, x + w / 2, y + dy + h / 2)
+
+
+def overlaps(a, b) -> bool:
+    return a[0] < b[2] + GAP and b[0] < a[2] + GAP and a[1] < b[3] + GAP and b[1] < a[3] + GAP
+
+
+def fixed_boxes(hospitals: list[dict], incidents: list[dict], zoom: float) -> list[tuple]:
+    """Hospital sign, name and ER labels, and incident circles, which never move."""
+    boxes = []
+    for h in hospitals:
+        x, y = to_px(h["lat"], h["lon"], zoom)
+        boxes += [(x - 12, y - 12, x + 12, y + 12), text_box(x, y, h["name"], -24), text_box(x, y, h["er"], 24)]
+    m_per_px = 156543.0 * math.cos(math.radians(42.36)) / 2 ** zoom
+    for r in incidents:
+        x, y = to_px(r["lat"], r["lon"], zoom)
+        rad = min(22, max(8, r["radius"] / m_per_px)) + 2
+        boxes.append((x - rad, y - rad, x + rad, y + rad))
+    return boxes
+
+
+def candidates(w: float) -> list[tuple[float, float]]:
+    """Offsets tried in order: on the spot, then beside it (right, left), stacking outwards."""
+    side = w / 2 + 16
+    out = [(0, 0)]
+    for dy in (0, 22, -22, 44, -44, 66, -66, 88, 110):
+        out += [(side, dy), (-side, dy)]
+    return out + [(0, dy) for dy in (30, -30, 52, -52)]
+
+
+def badge_offsets(units: list[dict], hospitals: list[dict], incidents: list[dict], zoom: float) -> dict[str, list[int]]:
+    """Pixel offsets so unit badges never cover a hospital, its labels, an incident or each other."""
+    placed = fixed_boxes(hospitals, incidents, zoom)
     out = {}
-    for spot, members in groups.items():
-        if len(members) == 1 and spot not in landmarks:
-            out[members[0]["id"]] = [0, 0]
-            continue
-        # Beside the marker and stacked downward, clear of the name label above it.
-        for i, u in enumerate(sorted(members, key=lambda m: m["id"])):
-            dx = 40 + badge_width(unit_badge_text(u)) / 2
-            out[u["id"]] = [int(dx), i * (BADGE_H + 2)]
+    for u in sorted(units, key=lambda u: (u["state"] in FREE_STATES, u["id"])):   # moving units first
+        x, y = to_px(u["lat"], u["lon"], zoom)
+        w = badge_width(unit_badge_text(u))
+        for dx, dy in candidates(w):
+            box = (x + dx - w / 2, y + dy - BADGE_H / 2, x + dx + w / 2, y + dy + BADGE_H / 2)
+            if not any(overlaps(box, b) for b in placed):
+                break
+        placed.append(box)
+        out[u["id"]] = [int(dx), int(dy)]
+    return out
+
+
+def parked_vehicles(units: list[dict], minute: dict) -> dict[str, list[str]]:
+    """Hospital vehicles idle at their own hospital: shown in the hospital's tooltip, not as badges."""
+    nodes = {h["id"]: h["node"] for h in minute["hospitals"]}
+    out: dict[str, list[str]] = defaultdict(list)
+    for u in units:
+        if u["kind"] == "HV" and u["state"] in FREE_STATES and u.get("owner") and u["node"] == nodes.get(u["owner"]):
+            out[u["owner"]].append(u["id"])
     return out
 
 
@@ -151,15 +201,17 @@ def walk_ins_in_er(h: dict) -> int:
     return sum(1 for p in h.get("patients", []) if p["walk_in"])
 
 
-def hospital_rows(minute: dict) -> list[dict]:
+def hospital_rows(minute: dict, parked: dict[str, list[str]] | None = None) -> list[dict]:
+    parked = parked or {}
     return [{"lon": h["lon"], "lat": h["lat"], "sign": "H",
-             "name": f"{h['id']} {h['name']}", "walk_ins": f"Walk-in patients ({walk_ins_in_er(h)})",
+             "name": hospital_label(h),
              "er": f"ER {h['er_used']}/{h['er_slots']}" + (f" (+{h['reserved']})" if h["reserved"] else ""),
              "er_color": load_color(h),
-             "label": f"{h['id']} {h['name']} (hospital)\nER {h['er_used']}/{h['er_slots']} in use, "
+             "label": f"{hospital_label(h)} (hospital)\nER {h['er_used']}/{h['er_slots']} in use, "
                       f"{h['reserved']} reserved, {h['waiting_for_staff']} waiting for staff\n"
                       f"Ward {h['ward_used']}/{h['ward_beds']}, boarding {h['boarding']}\n"
-                      f"{walk_ins_in_er(h)} walk-in patients in the ER"}
+                      f"Walk-in patients in the ER: {walk_ins_in_er(h)}"
+                      + (f"\nVehicles parked here: {', '.join(parked[h['id']])}" if parked.get(h["id"]) else "")}
             for h in minute["hospitals"]]
 
 
@@ -227,10 +279,11 @@ def focus_layers(units: list[dict], incidents: list[dict], focus: str | None) ->
 def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), focus: str | None = None) -> pdk.Deck:
     minute = run["timeline"][min(int(t), len(run["timeline"]) - 1)]
     units = units_at(run, t)
+    parked = parked_vehicles(units, minute)
+    shown = [u for u in units if u["id"] not in {v for vs in parked.values() for v in vs}]
     incidents = incident_rows(minute)
-    hospitals = hospital_rows(minute)
-    landmarks = {_spot(r["lat"], r["lon"]) for r in incidents + hospitals}
-    rows = unit_rows(units, badge_offsets(units, landmarks))
+    hospitals = hospital_rows(minute, parked)
+    rows = unit_rows(shown, badge_offsets(shown, hospitals, incidents, view.get("zoom", 12.6)))
     paths = [{"path": piece, "color": UNIT_STYLE[u["kind"]]["rgb"] + [210]}
              for u in units if u["path"] for piece in dashed(u["path"])]
     trails = [{**u["trail"], "color": UNIT_STYLE[u["kind"]]["rgb"]} for u in units if u.get("trail")]
@@ -249,7 +302,6 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), foc
                      get_background_color=HOSPITAL_RGB + [255]),
         _label_layer(hospitals, "hospital-names", "name", HOSPITAL_RGB, [0, -24]),
         _label_layer(hospitals, "hospital-er", "er", "er_color", [0, 24]),
-        _label_layer(hospitals, "hospital-walk-ins", "walk_ins", WALK_IN_RGB, [0, -46]),
         _badge_layer(rows, "units", 12, [5, 3], get_text="badge", get_color="fg",
                      get_background_color="bg", get_pixel_offset="offset"),
         *extra,
