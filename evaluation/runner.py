@@ -41,6 +41,7 @@ class EvalSettings:
     llm_mode: str = "off"
     repeats: int = LIVE_REPEATS
     replay_from: str | None = None
+    llm_guard: bool | None = None   # None: config/llm.json for new runs, the recorded setting for a replay
 
     def __post_init__(self) -> None:
         unknown = [p for p in self.policies if p not in POLICY_NAMES]
@@ -99,7 +100,7 @@ def run_one(settings: EvalSettings, evals_dir: Path, runs_dir: Path, job: tuple[
         shutil.rmtree(runs_dir / run_id, ignore_errors=True)
         llm = llm_for(settings, evals_dir, seed, policy, repeat, llm_factory)
         folder = run(seed, policy, runs_dir=runs_dir, cfg=cfg, roads=roads, places=places, llm=llm, light=True,
-                     run_id=run_id)
+                     run_id=run_id, llm_guard=None if settings.llm_mode == "replay" else settings.llm_guard)
         errors = api_errors(llm) if settings.llm_mode == "live" else []
         if not errors:
             metrics = json.loads((folder / "metrics.json").read_text())

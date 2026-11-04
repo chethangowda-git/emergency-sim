@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--repeats", type=int, default=LIVE_REPEATS, help="agent runs per seed (live and replay only)")
     e.add_argument("--from", dest="replay_from", default=None, help="evaluation id to replay, such as eval-001")
     e.add_argument("--workers", type=int, default=None, help="parallel processes (default 4 for live, else 1)")
+    e.add_argument("--llm-guard", choices=("on", "off"), default=None,
+                   help="rules check the LLM's conditional offers and extra units (default: config/llm.json)")
     args = parser.parse_args(argv)
     if args.command == "eval":
         return evaluate(args)
@@ -51,7 +53,8 @@ def main(argv: list[str] | None = None) -> None:
 
 def evaluate(args) -> None:
     settings = EvalSettings(seeds=args.seeds, policies=tuple(args.policies), llm_mode=args.llm,
-                            repeats=args.repeats, replay_from=args.replay_from)
+                            repeats=args.repeats, replay_from=args.replay_from,
+                            llm_guard=None if args.llm_guard is None else args.llm_guard == "on")
     workers = args.workers or (4 if args.llm == "live" else 1)
     out = run_evaluation(settings, lambda done, total, label: print(f"[{done}/{total}] {label}", flush=True),
                          workers=workers)

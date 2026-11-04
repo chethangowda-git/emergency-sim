@@ -314,17 +314,19 @@ class AgentPolicy(HospitalProtocols, Policy):
         return ArbiterScope(self.view).victim(vid)
 
     def _request(self, load: Load) -> AdmissionRequest:
-        inc, u = self._incident(load.incident), self._unit(load.unit)
+        u = self._unit(load.unit)
+        origin = self._incident(load.incident)["node"] if load.incident else u["node"]
         victims = [RequestedVictim(id=v["id"], severity=v["severity"], care_need=v["care_need"],
                                    deadline=v.get("deadline")) for v in map(self._victim, load.victims)]
-        return AdmissionRequest(incident=load.incident, origin_node=inc["node"], ready_at=self._ready_at(load),
+        return AdmissionRequest(incident=load.incident, origin_node=origin, ready_at=self._ready_at(load),
                                 victims=victims, unit=load.unit, aboard=load.aboard or u["state"] == "transporting")
 
     def _ready_at(self, load: Load) -> int:
         """Rule estimate of when the load can leave the scene (DESIGN 3.11)."""
-        inc, u = self._incident(load.incident), self._unit(load.unit)
+        u = self._unit(load.unit)
         if u["state"] in ("transporting", "at_hospital_no_slot"):
             return self.t
+        inc = self._incident(load.incident)
         arrive = u["on_scene_since"] if u["state"] == "on_scene" else self.t + DispatchScope(self.view).eta(
             load.unit, inc["node"])
         if inc["cleared"] or not inc["requires"]:
@@ -511,13 +513,22 @@ class AgentPolicy(HospitalProtocols, Policy):
         self._renegotiate(self.threads[m.thread_id]["unit"], exclude=m.sender)
 
     def _renegotiate(self, unit: str, exclude: str) -> None:
-        load = self.loads.get(unit)
+        load = self.loads.get(unit) or self._transfer_load(unit)
         if load is None or load.status in ("awaiting_offers", "escalated"):
             return
         load.exclude = sorted({*load.exclude, exclude})
         load.round, load.status, load.hospital = 1, "new", None
         load.aboard = self._unit(unit)["state"] in ("transporting", "at_hospital_no_slot")
         self._start_admission(load)
+
+    def _transfer_load(self, unit: str) -> Load | None:
+        """A hospital vehicle whose transfer patient arrived to no slot renegotiates like an ambulance
+        (DESIGN 5.5, 5.7). A transfer has no incident: its load's incident is empty."""
+        u = self._unit(unit)
+        if u["kind"] != "HV" or u["state"] != "at_hospital_no_slot" or not u["victims"]:
+            return None
+        self.loads[unit] = Load(unit=unit, incident="", victims=list(u["victims"]), aboard=True)
+        return self.loads[unit]
 
     # ----- upkeep -----
 

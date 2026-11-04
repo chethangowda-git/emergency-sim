@@ -44,6 +44,8 @@ def build_snapshot(w: World) -> dict:
                                if w.victims[vid].delivered_at is None),
         "staff_moving": [{"staff": s.id, "kind": s.kind, "to": dest, "arrives_at": arrive, "home": s.home}
                          for arrive, dest, s in sorted(w.staff_moving, key=lambda m: (m[0], m[2].id))],
+        "walk_ins_aboard": [_patient(w.victims[v]) | {"deadline": None, "unit": uid}   # transfers on the road
+                            for uid in sorted(w.units) for v in w.units[uid].victims if w.victims[v].walk_in],
     }
 
 

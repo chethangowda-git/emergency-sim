@@ -48,6 +48,7 @@ class World(AgentActions):
         self.reservations: dict[str, Reservation] = {}
         self.staff_moving: list[tuple[int, str, Staff]] = []
         self.trips: list[Trip] = []
+        self.transfer_at_door: set[str] = set()   # vehicles whose transfer patient arrived to no slot
         self.events: list[dict] = []
         self.timeline: list[dict] = []
         self._incidents_at = defaultdict(list)
@@ -245,7 +246,9 @@ class World(AgentActions):
             if v.picked_up_at is None:
                 v.picked_up_at = self.t
         u.state = "transporting"
-        trip = self._start_trip(u, "to_hospital", self.hospitals[u.hospital].node)
+        purpose = "transfer" if u.id in self.transfer_at_door else "to_hospital"   # a transfer stays a transfer
+        self.transfer_at_door.discard(u.id)
+        trip = self._start_trip(u, purpose, self.hospitals[u.hospital].node)
         self.emit("transport_started", unit=u.id, hospital=u.hospital, victims=list(u.victims),
                   trip=trip.id, eta=trip.arrive_t)
 
@@ -267,6 +270,8 @@ class World(AgentActions):
                 self.emit("patient_delivered", victim=vid, hospital=h.id, unit=u.id,
                           on_time=v.deadline is not None and self.t <= v.deadline)
         u.victims = left
+        if left and transfer:
+            self.transfer_at_door.add(u.id)
         if left:
             u.state = "at_hospital_no_slot"
             for vid in left:

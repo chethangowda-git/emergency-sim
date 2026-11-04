@@ -358,6 +358,8 @@ To free an ALS unit for a critical, Dispatch asks a hospital to take over one of
 - **Routine** (no deadline pressure): the sending hospital sends `transfer_request` to other hospitals; receivers reply according to their mood and the EMTALA rule; the sender picks one and executes `transfer_patient` with its own vehicle.
 - **Urgent** (a deadline cannot otherwise be met): the Arbiter arranges it as a swap (section 4.4, option 3).
 
+If a walk-in takes the receiver's reserved slot while the patient is on the road, the vehicle renegotiates at the door like an ambulance (section 5.7).
+
 The swap at the hospital door: the same ambulance can deliver the critical and pick up the transferring patient. Pick-up happens before drop-off, so the slot count never exceeds capacity.
 
 ### 5.6 Staff lending (between hospitals)
@@ -376,6 +378,8 @@ Dispatch: checks the patient's severity and time left
 ```
 
 New ETAs are computed from the unit's current position.
+
+The same holds for a hospital vehicle carrying a transfer (section 5.5): if its patient arrives to no slot (a walk-in took the reserved slot during the trip), Dispatch runs the admission Contract Net for the patient aboard, from the hospital door, exactly as for an ambulance, excluding the hospital it is waiting at. The onward trip is still a transfer (treatment continues, `transfer_completed`).
 
 ---
 

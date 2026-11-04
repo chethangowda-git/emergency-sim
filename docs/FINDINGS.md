@@ -188,7 +188,28 @@ G3 and G4 do not help, so they are not implemented.
 
 With the fixes and the guard, live LLM agents are about level with rules only (1.1 points lower, 13 of 20 seeds tied) instead of 18 points lower. The LLM no longer hurts, but it does not yet help either. Replays of guarded live runs reproduce their metrics and calls exactly.
 
-**Still open.** B3: a hospital vehicle doing an inter-hospital transfer whose reservation is broken by a walk-in waits at the receiving hospital's door with no renegotiation (transfers have no load); seen in 3 development seeds, for 200 to 293 minutes each. Not fixed yet.
+**B3, fixed afterwards.** A hospital vehicle doing an inter-hospital transfer whose reservation was broken by a walk-in waited at the receiving hospital's door with no renegotiation (transfers had no load); seen in 3 development seeds, for 200 to 293 minutes each. Now the vehicle renegotiates from the door like an ambulance, excluding the hospital it waits at, and the onward trip is still a transfer (DESIGN 5.5, 5.7). The agents' view now includes walk-in patients aboard a vehicle, so the patient can be offered. Free checks on the development seeds: rules only byte-identical to before (`eval-005` = `eval-003`); the guarded estimate unchanged (160 of 204); the estimate replay of the guarded live run gives its recorded 155 of 204.
+
+## Final evaluation (seeds 1 to 20, tag `final-eval`)
+
+Run once on the code with B1 to B3 and the guard, no tuning afterwards: `eval-010` (greedy and rules-only agents), `eval-011` (live LLM, guard on, 3 repeats), `eval-012` (live LLM, guard off, 1 repeat).
+
+| Seeds 1 to 20 | Greedy | Agents, rules only | Agents, LLM + guard | Agents, LLM, no guard |
+|---|---|---|---|---|
+| Criticals on time | 39.6% ± 17.1 | 84.6% ± 21.3 | **85.7%** ± 19.0 | 79.2% ± 20.2 |
+| Spread across repeats | – | – | 1.6 points | – |
+| Unserved criticals per run | 0.40 | 0.20 | 0.08 | 0.00 |
+| W / T / L vs greedy | – | 19 / 1 / 0 | 20 / 0 / 0 | 20 / 0 / 0 |
+| W / T / L vs rules only | – | – | 8 / 8 / 4 | 5 / 6 / 9 |
+| Report → care | 88.3 min | 83.1 min | 81.3 min | 84.2 min |
+| Victims delivered | 26.4 | 27.5 | 27.8 | 27.4 |
+| Decisions by rule / LLM / fallback | – | 100 / 0 / 0% | 88.3 / 11.1 / 0.5% | 72.0 / 27.7 / 0.4% |
+| Live runs (failed) | – | – | 60 (0) | 20 (0) |
+| LLM calls, tokens, cost | – | – | 8,155; 6.24 M in, 0.39 M out; $1.17 | 6,264; 3.92 M in, 0.23 M out; $0.73 |
+
+Against v1 (`eval-008`, 68.6%), the fixes alone (no guard) bring the live LLM to 79.2%, and the guard to 85.7%, slightly ahead of rules only (+1.0 point, 8 / 8 / 4). The development-seed result predicted roughly this (80.7% guarded vs 81.8% rules only there); on these seeds the guarded LLM came out a little ahead rather than a little behind, a difference within the variation between seeds. The fixes moved rules only from 85.0% to 84.6%.
+
+Three randomly chosen guarded runs (`seed18-agents-r2`, `seed9-agents-r2`, `seed15-agents-r3`) were rebuilt from their recorded calls: metrics and scenario match the evaluated run, every LLM call matches the recording, and two rebuilds are byte-identical on all 8 files. During the unguarded evaluation, four API calls hung for about 30 minutes (the client's timeout and retries); they then completed, and no run had an API error.
 
 ## Reproduce
 
@@ -198,7 +219,8 @@ python -m cli eval --seeds 101-120 --policies agents agents-nonego             #
 python -m cli eval --seeds 1-20                                                # the final evaluation
 python -m tools.diagnostics.llm_choices runs/seed42-agents-012                  # LLM vs rule, with counterfactuals
 python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3   # the live evaluation, replayed
-python -m tools.diagnostics.live_vs_rules --live eval-008 --rules eval-007        # the live vs rules-only table
+python -m tools.diagnostics.live_vs_rules --live eval-008 --rules eval-007        # the v1 live vs rules-only table (tag v1-live-eval)
+python -m tools.diagnostics.final_table --rules eval-010 --guarded eval-011 --unguarded eval-012   # the final table
 python -m tools.diagnostics.llm_losses --live eval-002 --estimate --evals-dir runs/dev-evals         # fixes and guards
 # the loss attribution and stuck counts above, on the code eval-002 was run with:
 git worktree add /tmp/v1 v1-live-eval && cp tools/diagnostics/llm_losses.py /tmp/v1/tools/diagnostics/

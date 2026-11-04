@@ -138,6 +138,9 @@ class ArbiterScope:
             for p in h["patients"]:
                 if p["id"] == vid:
                     return p
+        for p in self.data.get("walk_ins_aboard", []):
+            if p["id"] == vid:
+                return p
         raise KeyError(vid)
 
     def eta(self, unit_id: str, node: str) -> int:

@@ -192,3 +192,15 @@ def test_parallel_workers_write_the_same_results_in_plan_order(tmp_path):
     four = evaluate(tmp_path, settings, workers=4)
     assert (four / "results.jsonl").read_bytes() == (one / "results.jsonl").read_bytes()
     assert (four / "summary.json").read_bytes() == (one / "summary.json").read_bytes()
+
+
+def test_evaluation_guard_setting_is_recorded_and_replayed(tmp_path):
+    fake = lambda seed, policy, repeat: LLMClient("fake", fake=last_option)
+    rec = evaluate(tmp_path, ev.EvalSettings(seeds=(5,), policies=("agents",), llm_mode="live", repeats=1,
+                                             llm_guard=False), llm_factory=fake)
+    assert json.loads((rec / "settings.json").read_text())["llm_guard"] is False
+    assert json.loads((rec / "runs" / "seed5-agents-r1" / "config.json").read_text())["llm"]["guard"] is False
+    rep = evaluate(tmp_path, ev.EvalSettings(seeds=(5,), policies=("agents",), llm_mode="replay", repeats=1,
+                                             replay_from=rec.name))
+    assert json.loads((rep / "runs" / "seed5-agents-r1" / "config.json").read_text())["llm"]["guard"] is False
+    assert (rep / "results.jsonl").read_bytes() == (rec / "results.jsonl").read_bytes()

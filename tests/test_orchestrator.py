@@ -340,3 +340,22 @@ def test_guard_transfer_ready_checks_cooldown_pending_and_failed_threads():
     p.failed_conditional.add("TH001")
     assert not p._transfer_ready("H1", "TH001") and p._transfer_ready("H1", "TH003")
     assert AgentPolicy(LLMClient("off"), guard=False)._transfer_ready("H1", "TH001")
+
+
+def test_a_hospital_vehicle_arriving_to_no_slot_renegotiates_its_transfer():
+    """B3: a walk-in takes the slot reserved for a transfer patient during the trip (DESIGN 5.5, 5.7)."""
+    w = make_world([], hospitals=[hospital("H1", "D", slots=4, doctors=("trauma", "trauma"), nurses=2),
+                                  hospital("H2", "E", caps=TRAUMA_GENERAL, slots=1, doctors=("trauma", "trauma"),
+                                           nurses=2),
+                                  hospital("H3", "A", caps=TRAUMA_GENERAL, slots=1, doctors=("trauma",), nurses=2)],
+                   walk_ins=[walk_in("W01", "H1", 0, "critical", "trauma")]
+                   + [walk_in(f"W0{k}", "H1", 0, "minor", "general") for k in (2, 3, 4)]
+                   + [walk_in("W09", "H3", 31, "serious", "general")])
+    evs = run_agents(w, agents(), 60)
+    assert of_type(evs, "transfer_started")[0]["to_hospital"] == "H3"
+    assert [e["unit"] for e in of_type(evs, "arrived_no_slot")] == ["H1-TV1"]
+    cfp = [m["recipient"] for m in messages(evs, "admission_cfp")]
+    assert cfp == ["H1", "H2"]                                     # not the hospital at whose door it waits
+    done = of_type(evs, "transfer_completed")
+    assert [(d["victim"], d["hospital"]) for d in done] == [("W01", "H2")]   # the second leg is still a transfer
+    assert w.units["H1-TV1"].state in ("returning", "idle", "handover")

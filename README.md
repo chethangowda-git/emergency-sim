@@ -6,67 +6,47 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 
 ## Results
 
-**Rules only (no LLM) · real fire-station bases · 12 incidents per scenario · seeds 1 to 20** (`runs/evals/eval-007`). Every policy gets the same incidents, walk-ins and resources. This is the evaluation after the negotiation fixes in [docs/FINDINGS.md](docs/FINDINGS.md), run once with no tuning afterwards:
+**Final evaluation · seeds 1 to 20 · 12 incidents per scenario · real fire-station bases** (tag `final-eval`; `runs/evals/eval-010` to `eval-012`). Every policy gets the same incidents, walk-ins and resources. Run once on the current code, with no tuning afterwards. The LLM is `gpt-4o-mini-2024-07-18` at temperature 0.
 
-> The multi-agent system got **85.0%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **19 of 20** seeds (1 tie, no losses).
+> With the LLM and the rule guard, the multi-agent system got **85.7%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **all 20 seeds**. The same agents with rules only got 84.6%, and with the LLM but no guard 79.2%.
 
-| Policy | Criticals on time | Unserved criticals | Seeds won (W/T/L) | Report → care | Response time | Deadlines missed | Victims delivered |
-|---|---|---|---|---|---|---|---|
-| Greedy baseline | 39.6% ± 17.1 | 0.40 | – | 88.3 min | 48.3 min | 18.7 | 26.4 |
-| **Agents** | **85.0% ± 21.4** | 0.20 | **19 / 1 / 0** | 82.8 min | 33.2 min | 13.8 | **28.0** |
-| Agents, no negotiation | 70.8% ± 20.2 | 0 | 19 / 0 / 1 | 82.9 min | 36.8 min | 15.8 | 27.7 |
-| Agents, no Arbiter | 88.4% ± 19.7 | 0.15 | 19 / 1 / 0 | **80.1 min** | **29.6 min** | **13.3** | 27.6 |
-| Agents, rule hospitals | 69.4% ± 21.1 | 0 | 19 / 0 / 1 | 80.5 min | 33.6 min | 15.2 | 27.6 |
+| Seeds 1 to 20 | Greedy | Agents, rules only | **Agents, LLM + guard** | Agents, LLM, no guard |
+|---|---|---|---|---|
+| Criticals on time | 39.6% ± 17.1 | 84.6% ± 21.3 | **85.7%** ± 19.0 | 79.2% ± 20.2 |
+| Spread across repeats (sd per seed) | – | – (deterministic) | 1.6 points (3 repeats) | – (1 repeat) |
+| Unserved criticals per run | 0.40 | 0.20 | 0.08 | 0.00 |
+| W / T / L vs greedy | – | 19 / 1 / 0 | **20 / 0 / 0** | 20 / 0 / 0 |
+| W / T / L vs rules only | – | – | 8 / 8 / 4 | 5 / 6 / 9 |
+| Report → care | 88.3 min | 83.1 min | **81.3 min** | 84.2 min |
+| Victims delivered | 26.4 | 27.5 | **27.8** | 27.4 |
+| Decisions by rule / LLM / fallback | – | 100 / 0 / 0% | 88.3 / 11.1 / 0.5% | 72.0 / 27.7 / 0.4% |
+| Live runs (failed) | – | – | 60 (0) | 20 (0) |
+| LLM calls, cost | – | – | 8,155, $1.17 | 6,264, $0.73 |
 
-Values are means over the 20 seeds; ± is the standard deviation across seeds. A seed counts as won when the policy gets strictly more criticals to care on time than the baseline.
+Values are means over the 20 seeds (repeats averaged per seed first); ± is the standard deviation across seeds. A seed counts as won when the policy gets strictly more criticals to care on time. Fallbacks are model answers that did not fit the options; none came from API errors (DESIGN 12.7). Three randomly chosen guarded runs were rebuilt from their recorded calls: metrics, scenario and every LLM call matched, and two rebuilds were byte-identical on all files.
 
-**Against the baseline**, the full agent system more than doubles criticals on time (+45.4 points), cuts response time by 31% (15 minutes), report-to-care time by 6% and missed deadlines by 26%, and delivers 6% more victims. Hospital overload minutes drop by 9%. ER load balance is slightly worse (55 vs 53 points), and about 36 agent actions per run are rejected, against none for the baseline (see below).
+**What it means.** Coordination by agents more than doubles criticals on time over the greedy baseline, with or without the LLM. With the guard, the LLM is now slightly ahead of rules only (+1.0 point; 8 wins, 8 ties, 4 losses), which is within the variation between seeds; it is no longer a cost. Without the guard it is 5.4 points behind rules only. The guard (`llm_guard` in `config/llm.json`, on by default) is the "LLM proposes, rules guard" step: the LLM still makes its choices, but rules check its conditional "after transfer" offers and its extra-unit requests (DESIGN 12.8).
 
-**Gain breakdown on criticals on time:** greedy 39.6% → no negotiation 70.8% (+31.2) → rule hospitals 69.4% (−1.4) → no Arbiter 88.4% (+19.0) → full agents 85.0% (−3.5). The ablations are not strictly nested, so each step is the difference between two variants:
+### How we got here
 
-- **Coordination itself** (Incident Assessment sizing the response, Dispatch planning units by urgency, admissions by earliest capable arrival) gives the first +31 points.
-- **Hospital agents with negotiation** give the next +19: holds, conditional offers, early release of ready patients for criticals, transfers, staff loans and mutual aid together. Without them (no negotiation, or rule hospitals) the agents stay near 70%.
-- **The Arbiter costs 3.5 points** in rules-only mode (85.0% with it, 88.4% without). This was not investigated, to avoid tuning on the evaluation seeds.
-
-**Where the agents don't win:** the full system ties seed 2 (18.8% each), the hardest scenario. Results vary a lot between scenarios (standard deviation about 20 points), so the per-seed chart on the Evaluation page is worth a look alongside the means.
-
-**The fixes, and what they cost** ([docs/FINDINGS.md](docs/FINDINGS.md)): before them, the full system got only 61.1% (it was the weakest agent variant). Diagnosed on development seeds 101 to 120, the cause was hospitals promising the same ready-for-release patient in several offers (and mostly to non-critical loads), so awards were declined and criticals lost their early reservation. Each ready patient is now promised once, early release is kept for loads with a critical, and a declined award goes straight to the next offer. Keeping early releases for criticals makes non-criticals wait longer: report-to-care time is 13 minutes longer than before the fixes, but still better than the baseline.
-
-**Seed 42** (the reference scenario, not an evaluation seed), rules only, 12 incidents: agents get 11 of 15 criticals on time (73.3%) against 8 of 15 (53.3%) for greedy, miss 13 deadlines instead of 17 and deliver 37 victims instead of 32. Their average report-to-care time is longer (92.8 vs 82.0 min) because they also deliver the victims greedy never reaches.
-
-### Live LLM evaluation
-
-**Full agents with `gpt-4o-mini-2024-07-18` · seeds 1 to 20 × 3 repeats · 12 incidents · real fire-station bases** (`runs/evals/eval-008`, recorded; its replay `eval-009` reproduces `results.jsonl` byte for byte). No agent logic was changed before or after the run.
-
-> **The LLM made the agents worse.** Live LLM agents got **68.6%** of criticals to care on time, against **85.0%** for the same agents with rules only and **39.6%** for greedy. They still beat greedy on 16 of 20 seeds, but lost to rules-only agents on 16 of 20.
-
-| | Greedy | Agents, rules only | Agents, live LLM |
-|---|---|---|---|
-| Criticals on time (mean over seeds) | 39.6% ± 17.1 | **85.0%** ± 21.4 | 68.6% ± 19.3 |
-| Spread across the 3 repeats (sd, per seed) | – | – | 3.8 points |
-| Unserved criticals | 0.40 | **0.20** | 1.45 |
-| W / T / L vs greedy | – | 19 / 1 / 0 | 16 / 2 / 2 |
-| W / T / L vs rules-only agents | – | – | 3 / 1 / 16 |
-| Report → care | 88.3 min | 82.8 min | **78.3 min** |
-| Response time | 48.3 min | 33.2 min | **25.9 min** |
-| Deadlines missed | 18.7 | **13.8** | 16.8 |
-| Victims delivered | 26.4 | **28.0** | 23.5 |
-| Decisions by rule / LLM / fallback | – | 100 / 0 / 0% | 74.2 / 25.1 / 0.7% |
-
-60 live runs, 0 failed, 0 API errors; 8,763 LLM calls, 6.83 M input and 0.43 M output tokens, about **$1.28** at $0.15 / $0.60 per million tokens; 56 minutes with 4 runs in parallel. The 0.7% fallbacks are model answers that did not fit the options (for example a Dispatch ranking that left out an incident); none came from API errors (DESIGN 12.7).
-
-**What the model did differently** (all 60 runs): in 87% of hospital admission offers (3,733 of 4,288) it chose the conditional "after transfer" offer, which the rule takes only when nothing else fits; it ranked incidents differently from the rule in 61% of Dispatch plans; it asked for extra units in 61% of incident assessments; and it chose "spare the specialist hospital" in 28% of awards. The live agents escalated to the Arbiter less than half as often (6.1 vs 13.6 escalations per run), delivered 4.5 fewer victims and left more criticals unserved. They respond faster, because extra units are sent. Why the conditional offers cost criticals has not been diagnosed yet; that work belongs on development seeds, not on these. See [docs/FINDINGS.md](docs/FINDINGS.md).
-
-**Since then** (development seeds 101 to 120 only; [docs/FINDINGS.md](docs/FINDINGS.md)): the loss came mostly from two coordination bugs that only the LLM's choices reached (conditional awards overwritten at a hospital and left unanswered, and split loads aboard one unit), made worse by extra ALS requests on a 3-ALS fleet. Both are fixed, and a rule guard (`llm_guard` in `config/llm.json`, on by default) now checks "after transfer" offers and extra units. On the development seeds, live LLM agents went from 63.8% to 80.7% of criticals on time, against 81.8% for rules only. The seed 1 to 20 results above predate these changes and are reproducible at tag `v1-live-eval`; they have not been rerun.
+1. **v1, rules only** (`eval-007`, tag `v1-live-eval`): agents 85.0% vs greedy 39.6%, after fixing how hospitals promise ready-for-release patients ([docs/FINDINGS.md](docs/FINDINGS.md)). Ablations on that code: no negotiation 70.8%, rule hospitals 69.4%, no Arbiter 88.4%; so coordination gives the first +31 points, hospital negotiation the next +19, and the Arbiter cost 3.5 points in rules-only mode (not investigated, to avoid tuning on these seeds). The ablations were not rerun for the final evaluation.
+2. **v1, live LLM** (`eval-008`, 3 repeats, replayed exactly as `eval-009`): **68.6%**, 16.4 points below rules only and losing to it on 16 of 20 seeds. The model chose the conditional "after transfer" offer in 87% of hospital admissions and asked for extra units in 61% of incident assessments.
+3. **Diagnosis on development seeds 101 to 120 only** (`runs/dev-evals/`, `tools/diagnostics/llm_losses.py`): the loss came mostly from coordination bugs that only the LLM's choices reached, because rules never make conditional offers:
+   - **B1:** a hospital kept one pending conditional award, so a second one overwrote the first, which never got an answer; ambulances (and on a 3-ALS fleet, sometimes all of them) waited on scene for the rest of the run.
+   - **B2:** a load already aboard one unit could be split across hospitals, leaving a victim at a door with no reservation.
+   - **B3:** a hospital vehicle whose transfer patient arrived to no slot (a walk-in took it) never renegotiated.
+   - Extra ALS requests made B1 worse, and conditional offers that counted as "in time" delayed escalation to the Arbiter.
+4. **Fixes and guard:** B1 to B3 fixed (DESIGN 5.2, 5.5, 5.7, 8); guard G1 ("after transfer" only when a transfer could start, and 15 minutes of slack for a conditional offer) and G2 (at most 1 extra ALS, filled last, never a shortfall). Two further guards (re-ranking only within a deadline band, and limits on award plans) were estimated by replaying recorded calls and did not help, so they were not added. On development seeds the live LLM went from 63.8% to 80.7%, against 81.8% for rules only, before anything was run on seeds 1 to 20.
+5. **Final evaluation:** the table above. The fixes also changed the rules-only agents slightly (85.0% → 84.6%).
 
 **Caveats:**
 
-- The tables above the live section were made by the rules only (fast path and defaults); the live section shows the same agents with the LLM making the judgment calls. The headline numbers for this project are the rules-only ones; the LLM, as currently prompted, lowers them.
-- Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). The negotiation fixes were diagnosed and checked only on seeds 101 to 120, then evaluated once on seeds 1 to 20.
-- About 36 agent actions per run are rejected by the simulator, mostly when two agents claim the same hospital slot in the same minute. The world rejects them safely and the agents renegotiate.
+- Seeds 1 to 20 were used to find bugs while the agents were built (Phase 3). Every diagnosis and fix since then was made on seeds 101 to 120, then evaluated once on seeds 1 to 20.
+- Results vary a lot between scenarios (standard deviation about 20 points); seed 2 is the hardest (greedy and rules-only agents 18.8%, LLM agents 25.0% guarded and 31.3% unguarded; rules only ties greedy there). The per-seed chart on the Evaluation page is worth a look alongside the means.
+- The unguarded evaluation ran 1 repeat to keep the cost down, so its per-seed numbers include model variation (the guarded spread across repeats is 1.6 points).
 - The world is a simplified one (section [Assumptions](#assumptions-and-simplifications)): no traffic, no deterioration, approximate times and fictional hospital capacities.
 
-To reproduce: open the **Evaluation** page and press **Run evaluation** (about 30 seconds), or run `python -m cli eval --seeds 1-20`. Rules-only runs are deterministic, so you get exactly these numbers. The live evaluation replays exactly without a key: `python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3`.
+To reproduce: `python -m cli eval --seeds 1-20 --policies greedy agents` (rules only, deterministic, about 30 seconds; or the **Evaluation** page), and replay the live evaluations without a key: `python -m cli eval --seeds 1-20 --policies greedy agents --llm replay --from eval-011 --repeats 3` (and `--from eval-012 --repeats 1`). `python -m tools.diagnostics.final_table --rules eval-010 --guarded eval-011 --unguarded eval-012` prints the table. The v1 results are reproducible at tag `v1-live-eval`.
 
 ## Launch
 
