@@ -19,9 +19,9 @@ def test_kpi_cards_are_the_six_headline_numbers_with_one_decimal():
          "avg_report_to_care_min": 41.54, "victims_delivered": 9, "avg_response_time_min": 7.25,
          "allocation_conflicts": 5}
     cards = panels.kpi_cards(m)
-    assert [c[0] for c in cards] == ["Criticals on time", "Unserved criticals", "Response", "Avg to care",
-                                     "Delivered", "Conflicts"]
-    assert cards[0][1:] == ("75.0%", "3 of 4") and cards[2][1:] == ("7.2 min", "to first ambulance")
+    assert [c[0] for c in cards] == ["Criticals on time", "Unserved critical victims", "Response time",
+                                     "Avg to care", "Delivered", "Allocation conflicts"]
+    assert cards[0][1:] == ("75.0%", "3 of 4") and cards[2][1:] == ("7.2 min", "to 1st ambulance")
     assert cards[3][1] == "41.5 min" and cards[5][1] == "5"
     assert panels.kpi_cards({**m, "critical_on_time_pct": None, "avg_report_to_care_min": None})[0][1] == "–"
     assert panels.kpi_cards({k: v for k, v in m.items() if k != "allocation_conflicts"})[5][1] == "–"

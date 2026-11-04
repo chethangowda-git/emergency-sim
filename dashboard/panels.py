@@ -128,7 +128,7 @@ def fmt(value, suffix: str = "") -> str:
 def kpis(m: dict) -> list[tuple[str, str]]:
     return [
         ("Criticals on time", f"{fmt(m['critical_on_time_pct'], '%')} ({m['criticals_on_time']}/{m['criticals_total']})"),
-        ("Unserved criticals", fmt(m["unserved_criticals"])),
+        ("Unserved critical victims", fmt(m["unserved_criticals"])),
         ("Avg report → care", fmt(m["avg_report_to_care_min"], " min")),
         ("Avg response time", fmt(m["avg_response_time_min"], " min")),
         ("ER load balance", fmt(m["er_load_balance_pct"], " pts")),
@@ -147,7 +147,7 @@ def per_hospital_kpis(m: dict) -> pd.DataFrame:
 
 COMPARE = (  # label, metric key, +1 when higher is better, -1 when lower is better, 0 when neither
     ("Criticals on time", "critical_on_time_pct", 1, "%"),
-    ("Unserved criticals", "unserved_criticals", -1, ""),
+    ("Unserved critical victims", "unserved_criticals", -1, ""),
     ("Avg report → care", "avg_report_to_care_min", -1, " min"),
     ("Avg response time", "avg_response_time_min", -1, " min"),
     ("ER load balance", "er_load_balance_pct", -1, " pts"),
@@ -177,24 +177,25 @@ def kpi_comparison(base: dict, agents: dict) -> pd.DataFrame:
 # ----- compact right panel (DESIGN 13.1): KPI cards, units on one line, one row per hospital -----
 
 UNIT_SHORT = {"ALS": "Paramedic (ALS)", "BLS": "Basic (BLS)", "FIRE": "Fire", "RESCUE": "Rescue", "HV": "Hospital vehicles"}
-KPI_TERMS = ("Criticals on time", "Unserved criticals", "Response", "Avg to care", "Delivered", "Conflicts")
+KPI_TERMS = ("Criticals on time", "Unserved critical victims", "Response time", "Avg to care", "Delivered",
+             "Allocation conflicts")
 
 
 def kpi_cards(m: dict) -> list[tuple[str, str, str]]:
     """(title, value, detail) for the six headline numbers, as they stand at the minute."""
     return [
         ("Criticals on time", fmt(m["critical_on_time_pct"], "%"), f"{m['criticals_on_time']} of {m['criticals_total']}"),
-        ("Unserved criticals", fmt(m["unserved_criticals"]), "not delivered"),
-        ("Response", fmt(m["avg_response_time_min"], " min"), "to first ambulance"),
+        ("Unserved critical victims", fmt(m["unserved_criticals"]), "not at a hospital"),
+        ("Response time", fmt(m["avg_response_time_min"], " min"), "to 1st ambulance"),
         ("Avg to care", fmt(m["avg_report_to_care_min"], " min"), "to hospital"),
         ("Delivered", fmt(m["victims_delivered"]), "victims"),
-        ("Conflicts", fmt(m.get("allocation_conflicts")), "allocation, so far"),
+        ("Allocation conflicts", fmt(m.get("allocation_conflicts")), "so far"),
     ]
 
 
 def kpi_cards_html(m: dict) -> str:
-    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{tip(t)}</div><div><span class='kpi-v'>{v}</span> "
-                    f"<span class='kpi-d'>{d}</span></div></div>" for t, v, d in kpi_cards(m))
+    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{tip(t)}</div><div class='kpi-v'>{v}</div>"
+                    f"<div class='kpi-d'>{d}</div></div>" for t, v, d in kpi_cards(m))
     return f"<div class='kpis'>{cards}</div>"
 
 

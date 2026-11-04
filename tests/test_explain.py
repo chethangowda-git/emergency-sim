@@ -89,7 +89,7 @@ def test_now_sentence_names_what_happened(tmp_path):
 
 
 def test_every_tooltip_term_has_text():
-    assert all(explain.GLOSSARY[t] for t in ("Criticals on time", "Unserved criticals", "Avg to care", "Delivered",
+    assert all(explain.GLOSSARY[t] for t in ("Criticals on time", "Unserved critical victims", "Avg to care", "Delivered",
                                              "on track", "tight", "late", "Guard", "Referee"))
     from dashboard import wording as W
     assert "title='" in explain.tip("tight") and W.unit_name("ALS2") == "paramedic ambulance ALS2"
@@ -165,3 +165,8 @@ def test_victims_read_as_phrases_with_ids_kept_for_tooltips():
     assert W.victims_phrase(["I03-V1", "I03-V2"], sev) == "I03's 2 minor victims"
     assert W.victims_phrase(["I02-V1", "I02-V2"], sev) == "I02's critical and serious victims"
     assert W.victims_phrase(["W03"], sev) == "patient W03"
+
+
+def test_every_kpi_card_has_a_tooltip():
+    from dashboard import panels
+    assert all(explain.GLOSSARY.get(t) for t in panels.KPI_TERMS)

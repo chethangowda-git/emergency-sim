@@ -14,7 +14,7 @@ BASELINE = "greedy"
 # key: (label, +1 when higher is better, -1 when lower is better, 0 when neither)
 METRICS = {
     "critical_on_time_pct": ("Criticals on time (%)", 1),
-    "unserved_criticals": ("Unserved criticals", -1),
+    "unserved_criticals": ("Unserved critical victims", -1),
     "avg_report_to_care_min": ("Avg report → care (min)", -1),
     "er_load_balance_pct": ("ER load balance (pts)", -1),
     "idle_minutes": ("Hospital idle minutes (all hospitals)", -1),

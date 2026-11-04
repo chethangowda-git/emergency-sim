@@ -14,7 +14,7 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 |---|---|---|---|---|
 | Criticals on time | 39.6% ± 17.1 | 84.6% ± 21.3 | **85.7%** ± 19.0 | 79.2% ± 20.2 |
 | Spread across repeats (sd per seed) | – | – (deterministic) | 1.6 points (3 repeats) | – (1 repeat) |
-| Unserved criticals per run | 0.40 | 0.20 | 0.08 | 0.00 |
+| Unserved critical victims per run | 0.40 | 0.20 | 0.08 | 0.00 |
 | W / T / L vs greedy | – | 19 / 1 / 0 | **20 / 0 / 0** | 20 / 0 / 0 |
 | W / T / L vs rules only | – | – | 8 / 8 / 4 | 5 / 6 / 9 |
 | Report → care | 88.3 min | 83.1 min | **81.3 min** | 84.2 min |
@@ -97,7 +97,7 @@ The page opens ready to replay the **Demo**, a recorded run that forces negotiat
 4. **🚨 Spawn** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
 5. **⚙ Settings** holds the rarely used settings: incidents per scenario (4 by default; one is always the surge), **🎲 Restart with new seed** (waits at minute 0), **Past runs** (replayed from minute 0 with the same clock) and **Compare with baseline** (two maps side by side on one clock, with a KPI comparison table).
 
-The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their name and ER use; hover one for its walk-ins, ward and staff, and the hospital vehicles parked there. Units are small coloured dots, named when you hover them, so they never cover the map's place names; the selected incident's units are labelled beside their markers. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: six KPI cards (criticals on time, unserved criticals, response time to the first ambulance, average time to care, victims delivered, allocation conflicts so far), a small card per unit kind (free now and how busy so far), one row per hospital with an ER bar (ER use, doctors and nurses free, walk-ins, use so far), and the feed, all following the clock:
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their name and ER use; hover one for its walk-ins, ward and staff, and the hospital vehicles parked there. Units are small coloured dots, named when you hover them, so they never cover the map's place names; the selected incident's units are labelled beside their markers. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: six KPI cards (criticals on time, unserved critical victims, response time to the first ambulance, average time to care, victims delivered, allocation conflicts so far), a small card per unit kind (free now and how busy so far), one row per hospital with an ER bar (ER use, doctors and nurses free, walk-ins, use so far), the **Agents** strip, and the feed, all following the clock. The Agents strip has one line per agent (Incident Assessment, Dispatch, H1, H2, H3, Referee): what it is doing (idle, deciding, waiting for replies), a hospital's mood, requests pending, and its last message in plain words. Click an agent to see only its messages in the conversations; click it again to see everyone. The feed has two tabs:
 
 - **Incidents** (default): one line per incident, active ones first, then **Between hospitals** (staff loans and transfers that help no incident). Click one to read its conversation: what the agents said to each other, in time order, one line per message, for example "min 86 Dispatch → H1, H2: Can you take the critical patient? Arrives in about 10 min." and "min 87 H1 → Dispatch: No, my ER is full." Grey lines starting with "·" say what happened in the world (an ambulance left, a patient reached a hospital on time) and when the guard blocked an AI choice, naming the agent. Repeated rounds fold into one line. Hover a hospital ID for its name. Clicking an incident here or on the map highlights it and its units. **(AI)** after a line means that agent's AI decided it; hover it for the AI's own words and what the rule would have chosen.
 - **Log**: the raw event timeline, for debugging.
@@ -124,13 +124,24 @@ Three well-spread real hospital sites host the simulated hospitals. They have **
 - Hospitals start empty. Staff work the whole run. Victims don't deteriorate. Every victim goes to a hospital.
 - The full list, with the exact rules, is in DESIGN sections 3, 3.11 and 15.
 
+**Why the scenarios come from a seeded generator, not an LLM.** Every scenario (incident times, places, types and victims, severities, care needs and deadlines, the walk-in schedule, and where each unit is based) is drawn by `sim/generator.py` from one `random.Random(seed)`. The same seed always gives exactly the same scenario, byte for byte, so every version in the evaluation faces identical inputs, a result can be reproduced by anyone from its seed, and a recorded run replays exactly. An LLM writing scenarios would give different data on each call and could not be checked against a fixed seed. Incident descriptions ("two-car collision at an intersection", "school bus on fire, heavy smoke, many passengers") are picked by the seeded generator from fixed templates per incident type; no LLM writes them. The LLM is used only for agent decisions, and every call is recorded.
+
 ## Agents (Phase 2)
 
-Four agents live in `coordination/`: Incident Assessment, Dispatch, one Hospital agent per hospital, and the Arbiter. Rules compute every number and list the possible options. When only one option fits, the rule decides. Otherwise an LLM picks among the options and gives a one-line reason, and a rule takes over if the LLM's answer is missing or invalid. Each decision records whether a rule, the LLM or the fallback made it.
+Four kinds of agent live in `coordination/`: Incident Assessment, Dispatch, one Hospital agent per hospital, and the Arbiter (shown as the **Referee** on the dashboard). How they map to the assignment's agents:
+
+| The assignment's agent | Our agent | Notes |
+|---|---|---|
+| Hospital Coordination Agent | **Hospital agent, one per hospital** (H1, H2, H3) | Each speaks only for its own ER slots, beds, staff and vehicles: admission offers, transfers, staff and vehicle loans |
+| Resource Allocation Agent | **Referee** (the Arbiter) | Makes the binding allocation when the others cannot agree in time: which hospital takes a patient, and how (options 1 to 7) |
+| (ours, in addition) | Incident Assessment | Turns a report into units needed, urgency and care needs |
+| (ours, in addition) | Dispatch | Owns the public fleet: sends units and runs the admission negotiation for each ambulance load |
+
+ Rules compute every number and list the possible options. When only one option fits, the rule decides. Otherwise an LLM picks among the options and gives a one-line reason, and a rule takes over if the LLM's answer is missing or invalid. Each decision records whether a rule, the LLM or the fallback made it.
 
 The agents can propose actions the baseline never uses: holds, early release, transfers between hospitals, lending a vehicle or a staff member, and redirecting or rerouting an ambulance. The simulator still checks every action against the same rules.
 
-No live LLM run has been made yet. `config/llm.json` has `mode: off` and no model. Before the first live run, set `model` to a pinned OpenAI model ID and provide `OPENAI_API_KEY`. Every LLM call is then recorded, so a run can be replayed exactly without a key.
+Live runs use the model pinned in `config/llm.json` (`gpt-4o-mini-2024-07-18`, temperature 0) and need `OPENAI_API_KEY`. Every LLM call is recorded, so a run can be replayed exactly without a key.
 
 ## Negotiation (Phase 3)
 

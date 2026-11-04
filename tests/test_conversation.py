@@ -145,3 +145,30 @@ def test_guard_blocks_are_narrator_lines_naming_the_agent():
     assert narr[0]["text"] == "The guard cut Incident Assessment's AI request from 3 extra paramedic ambulances to 1."
     assert narr[0]["tip"] == "big fire"
     assert narr[1]["text"] == f"The guard kept the option “after a transfer” from the AI of H1 and H2: {why}."
+
+
+def test_agents_strip_has_one_line_per_agent_with_status_mood_and_last_message(tmp_path):
+    from dashboard import agent_strip
+    data = recorded(tmp_path)
+    minute = next(t for t in range(len(data["timeline"]))
+                  if any(m["t"] == t for m in data["events"] if m["type"] == "message"))
+    ctx = context(data, minute, net=roads())
+    rows = agent_strip.rows(ctx)
+    assert [r["name"] for r in rows] == ["Incident Assessment", "Dispatch", "H1", "H2", "H3", "Referee"]
+    assert all(r["mood"] in agent_strip.MOOD_WORDS.values() for r in rows if r["id"].startswith("H"))
+    assert all(r["mood"] is None for r in rows if not r["id"].startswith("H"))
+    assert all(r["status"] in ("idle", "deciding") or r["status"].startswith("waiting for ") for r in rows)
+    talked = [r for r in rows if r["last"]]
+    assert talked and all(r["last_text"].startswith(f"min {r['last']['t']} → ") for r in talked)
+    assert not CODE.search(" ".join(agent_strip.label(r) for r in rows))
+    assert agent_strip.label({**rows[0], "last_text": "", "pending": 2}).endswith("2 requests to answer — no message yet")
+
+
+def test_clicking_an_agent_keeps_only_its_messages():
+    from dashboard import agent_strip
+    lines = [C.line(1, "dispatch", ["H1", "H2"], "Can you take the critical patient?"),
+             C.line(2, "H1", ["dispatch"], "No, my ER is full."), C.narrator(2, "An ambulance left."),
+             C.line(3, "H2", ["dispatch"], "Yes.")]
+    assert [l["t"] for l in agent_strip.only(lines, "H1")] == [1, 2]
+    assert [l["t"] for l in agent_strip.only(lines, "dispatch")] == [1, 2, 3]
+    assert agent_strip.only(lines, None) == lines

@@ -96,6 +96,7 @@ dashboard/
   eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
   feed.py              # the Simulation page's feed: Incidents (conversations) and Log
   names.py             # hospital display names (display only; run files keep the internal names)
+  agent_strip.py       # the Agents strip: one line per agent (status, mood, requests, last message), click to filter
   versions.py          # the Version choice (the four evaluated systems) and the recordings a replay can use
   wording.py           # every event, message, reason and decision code in plain English (tests/test_wording.py)
   conversation.py      # each incident's agent conversation, one line per message (the Incidents tab)
@@ -307,6 +308,7 @@ Agreed with the user after Phase 5: runs happen in real time instead of being co
 - [x] Simpler feed: only Incidents (one story per incident, numbered plain sentences, one "(AI)" tag with the AI's words on hover) and Log.
 - [x] Conversation feed: each incident's agent conversation in time order (sender → recipients, reason in the sentence, "·" narrator lines for world events, guard blocks and folded repeats), Between hospitals entry, replacing the stories.
 - [x] Dashboard fixes and required metrics: one Version dropdown (Replay/Live, recording per seed) with the status line always matching it; labelled buttons; six KPI cards; unit free now and busy so far; hospital staff free and use so far; unit dots named on hover; Evaluation page resource use and conflicts table, plain ablation sentences, one decimal; allocation conflicts and hospital utilization metrics back-filled by replay (DESIGN 11.1, 11.2).
+- [x] Assignment check: Agents strip (one line per agent, click filters the conversations), KPI cards in one row, "Unserved critical victims" everywhere, the mapping to the assignment's agents and why scenarios come from a seeded generator (README, DESIGN 4).
 - [x] Polish: neutral hospital display names, no overlapping map labels (walk-ins and parked vehicles on hover), feed fills the window, Negotiations as list + detail with merged bubbles, hospital chips and plain wording.
 
 ## Things not to do

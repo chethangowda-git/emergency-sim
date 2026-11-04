@@ -12,11 +12,11 @@ from dashboard import wording as W
 GLOSSARY = {
     "Criticals on time": "Critical victims who reached a capable hospital before their deadline, out of all "
                          "critical victims reported so far. The headline measure.",
-    "Unserved criticals": "Critical victims not at a hospital yet.",
+    "Unserved critical victims": "Critical victims not at a hospital yet.",
     "Avg to care": "Average minutes from an incident being reported to its victims reaching a hospital.",
     "Delivered": "Victims who have reached a hospital so far.",
-    "Response": "Average minutes from an incident being reported to the first ambulance on scene.",
-    "Conflicts": "Allocation conflicts so far: times a planned unit or bed could not be given as planned and had to "
+    "Response time": "Average minutes from an incident being reported to the first ambulance on scene.",
+    "Allocation conflicts": "So far: times a planned unit or bed could not be given as planned and had to "
                  "be sorted out (a refused action, an ambulance arriving to no free slot, a reservation taken by a "
                  "walk-in, or a hospital declining an award). Counted the same way for every version.",
     "Utilization": "Share of the hospital's real capacity (ER slots, doctors and nurses, whichever is scarcest) "

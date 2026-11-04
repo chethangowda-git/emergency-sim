@@ -188,7 +188,7 @@ def test_kpi_comparison_marks_better_and_worse():
     table = panels.kpi_comparison(base, agents)
     assert table.loc["Criticals on time"].tolist() == ["40.0%", "60.0%", "+20 pts", "✅ better"]
     assert table.loc["Avg report → care"].tolist() == ["80.0 min", "90.0 min", "+10 min", "🔻 worse"]
-    assert table.loc["Rejected actions", ""] == "" and table.loc["Unserved criticals", "Change"] == ""
+    assert table.loc["Rejected actions", ""] == "" and table.loc["Unserved critical victims", "Change"] == ""
 
 
 def test_past_runs_can_be_limited_to_policies(tmp_path):

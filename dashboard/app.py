@@ -344,10 +344,12 @@ HOW_TO_READ = """**How to read this**
    time order: "Dispatch → H1, H2: Can you take the critical patient?" and each hospital's answer with its
    reason. Grey lines starting with "·" say what happened in the world. **(AI)** after a line means that
    agent's AI decided it; hover it for the AI's own words. Hover a hospital (H1, H2, H3) for its name.
-3. **The results** (top right): criticals on time, unserved criticals, response time (report to first
+3. **The results** (top right): criticals on time, unserved critical victims, response time (report to first
    ambulance), average time to care, victims delivered and allocation conflicts so far. Below them, each kind
    of unit free now and how busy it has been so far, and each hospital's ER, free doctors and nurses and how
-   much of it has been used so far. The **Evaluation** page compares the four versions over 20 scenarios.
+   much of it has been used so far. The **Agents** strip has one line per agent: what it is doing, a hospital's
+   mood, requests waiting, and its last message; click one to see only its messages in the conversations.
+   The **Evaluation** page compares the four versions over 20 scenarios.
 """
 
 
