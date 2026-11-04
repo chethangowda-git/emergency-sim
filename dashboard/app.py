@@ -340,15 +340,15 @@ HOW_TO_READ = """**How to read this**
 1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
    carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
    amber without, grey once everyone is at a hospital. Hover any marker; click one to open its conversation.
-2. **The conversations** (right). Click an incident to read what the agents said to each other about it, in
+2. **Conversations** (the first tab, right). Click an incident to read what the agents said to each other about it, in
    time order: "Dispatch → H1, H2: Can you take the critical patient?" and each hospital's answer with its
    reason. Grey lines starting with "·" say what happened in the world. **(AI)** after a line means that
    agent's AI decided it; hover it for the AI's own words. Hover a hospital (H1, H2, H3) for its name.
 3. **The results** (top right): criticals on time, unserved critical victims, response time (report to first
    ambulance), average time to care, victims delivered and allocation conflicts so far. Below them, each kind
    of unit free now and how busy it has been so far, and each hospital's ER, free doctors and nurses and how
-   much of it has been used so far. The **Agents** strip has one line per agent: what it is doing, a hospital's
-   mood, requests waiting, and its last message; click one to see only its messages in the conversations.
+   much of it has been used so far (the **Resources** tab). The **Agents** tab has one card per agent: what it
+   is doing, a hospital's mood and its last message; click one to see only its messages in Conversations.
    The **Evaluation** page compares the four versions over 20 scenarios.
 """
 
@@ -555,18 +555,16 @@ def main_map(run: dict, t: float) -> None:
     if objects and marker != st.session_state.get("map_pick"):
         st.session_state.map_pick = marker
         if picked:
-            st.session_state.update(focus=picked, story=picked, feed="Incidents")
+            st.session_state.update(focus=picked, story=picked, feed="Conversations")
 
 
 def side_panel(key: str, run: dict, minute: int) -> None:
-    state = run["timeline"][minute]
     m = kpis_at(key, minute, run)
-    st.markdown(panels.kpi_cards_html(m) + panels.units_html(state, m) + panels.hospitals_html(state, m),
-                unsafe_allow_html=True)
+    st.markdown(panels.kpi_cards_html(m), unsafe_allow_html=True)
     if st.session_state.spawn_mode and live() is not None:
         spawn_form()
         return
-    feed.render(key, run, minute, is_agents(run), FEED_HEIGHT, roads())
+    feed.render(key, run, minute, is_agents(run), FEED_HEIGHT, roads(), m)
 
 
 def comparison_panel(key: str, run: dict, base_id: str, minute: int) -> None:
@@ -712,7 +710,7 @@ def jump_to(h: dict) -> None:
     st.session_state.setdefault("opened_from", {})[built[key]] = \
         run_store.source_of(h["run"]).relative_to(run_store.RUNS_DIR).as_posix()
     open_run(built[key])
-    st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], story=h["incident"], feed="Incidents")
+    st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], story=h["incident"], feed="Conversations")
 
 
 def evaluation() -> None:

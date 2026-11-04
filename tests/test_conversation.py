@@ -147,28 +147,47 @@ def test_guard_blocks_are_narrator_lines_naming_the_agent():
     assert narr[1]["text"] == f"The guard kept the option “after a transfer” from the AI of H1 and H2: {why}."
 
 
-def test_agents_strip_has_one_line_per_agent_with_status_mood_and_last_message(tmp_path):
-    from dashboard import agent_strip
+def test_agents_tab_has_one_card_per_agent_with_a_plain_status_and_last_message(tmp_path):
+    from dashboard import agents_tab
     data = recorded(tmp_path)
     minute = next(t for t in range(len(data["timeline"]))
                   if any(m["t"] == t for m in data["events"] if m["type"] == "message"))
-    ctx = context(data, minute, net=roads())
-    rows = agent_strip.rows(ctx)
-    assert [r["name"] for r in rows] == ["Incident Assessment", "Dispatch", "H1", "H2", "H3", "Referee"]
-    assert all(r["mood"] in agent_strip.MOOD_WORDS.values() for r in rows if r["id"].startswith("H"))
-    assert all(r["mood"] is None for r in rows if not r["id"].startswith("H"))
-    assert all(r["status"] in ("idle", "deciding") or r["status"].startswith("waiting for ") for r in rows)
-    talked = [r for r in rows if r["last"]]
-    assert talked and all(r["last_text"].startswith(f"min {r['last']['t']} → ") for r in talked)
-    assert not CODE.search(" ".join(agent_strip.label(r) for r in rows))
-    assert agent_strip.label({**rows[0], "last_text": "", "pending": 2}).endswith("2 requests to answer — no message yet")
+    cards = agents_tab.cards(context(data, minute, net=roads()))
+    assert [c["name"] for c in cards] == ["Incident Assessment", "Dispatch", "H1", "H2", "H3", "Referee"]
+    assert all(any(w in c["status"] for w in agents_tab.MOOD_WORDS.values()) for c in cards if c["id"].startswith("H"))
+    assert next(c for c in cards if c["id"] == "arbiter")["status"] == "💤 Not needed yet"
+    for c in cards:
+        assert "idle" not in c["status"].lower()
+        assert not ("Nothing to do" in c["status"] and ("Waiting" in c["status"] or "to answer" in c["status"]))
+        assert not c["last_text"] or c["last_text"].startswith("min ")
+    assert not CODE.search(" ".join(agents_tab.card_label(c) for c in cards))
+
+
+def test_agent_status_phrases():
+    from dashboard import agents_tab as A
+    s = lambda **k: A.status(**{"talked": True, "waiting_on": [], "to_answer": 0, "acted": False, "by_ai": False, **k})
+    assert s(talked=False, to_answer=2) == "💤 Not needed yet"
+    assert s(waiting_on=["H1"]) == "⏳ Waiting for H1's answer"
+    assert s(waiting_on=["H1", "H3"]) == "⏳ Waiting for answers from H1 and H3"
+    assert s(waiting_on=["H1", "H2", "H3"]) == "⏳ Waiting for 3 hospitals' answers"
+    assert s(waiting_on=["dispatch"], to_answer=1) == "⏳ Waiting for Dispatch's answer · 📥 1 request to answer"
+    assert s(to_answer=2, acted=True) == "📥 2 requests to answer"
+    assert s(acted=True) == "⚙️ Deciding" and s(acted=True, by_ai=True) == "🧠 Deciding (AI)"
+    assert s() == "✓ Nothing to do"
 
 
 def test_clicking_an_agent_keeps_only_its_messages():
-    from dashboard import agent_strip
+    from dashboard import agents_tab
     lines = [C.line(1, "dispatch", ["H1", "H2"], "Can you take the critical patient?"),
              C.line(2, "H1", ["dispatch"], "No, my ER is full."), C.narrator(2, "An ambulance left."),
              C.line(3, "H2", ["dispatch"], "Yes.")]
-    assert [l["t"] for l in agent_strip.only(lines, "H1")] == [1, 2]
-    assert [l["t"] for l in agent_strip.only(lines, "dispatch")] == [1, 2, 3]
-    assert agent_strip.only(lines, None) == lines
+    assert [l["t"] for l in agents_tab.only(lines, "H1")] == [1, 2]
+    assert [l["t"] for l in agents_tab.only(lines, "dispatch")] == [1, 2, 3]
+    assert agents_tab.only(lines, None) == lines
+
+
+def test_every_tab_says_what_it_shows():
+    from dashboard import feed
+    assert list(feed.INTROS) == list(feed.FEEDS) == ["Conversations", "Agents", "Resources", "Log"]
+    assert feed.INTROS["Conversations"] == "Messages between agents, grouped by incident."
+    assert feed.GREEDY["Conversations"] == "The greedy baseline doesn't negotiate; its decisions are in the Log."

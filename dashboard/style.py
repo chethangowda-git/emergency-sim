@@ -15,18 +15,19 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .clock .tag {opacity: 0.75;}
 .prog {height: 4px; background: rgba(128,128,128,.25); border-radius: 2px; margin: 3px 0 8px 0;}
 .prog > div {height: 100%; background: #2a78d6; border-radius: 2px;}
-.kpis {display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;}
+.kpis {display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 12px;}
 .kpis .kpi {padding: 2px 6px;}
 .kpis .kpi-t {font-size: 0.62rem; line-height: 1.15; min-height: 1.45rem;}
 .kpis .kpi-v {font-size: 1.0rem; line-height: 1.2;}
 .kpis .kpi-d {font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-.st-key-agentstrip {gap: 0 !important; margin: 0 0 2px 0;}
-.st-key-agentstrip div[data-testid="stButton"] button[kind="tertiary"] {min-height: 1.15rem; width: 100%;
-    justify-content: flex-start; font-weight: 400;}
-.st-key-agentstrip div[data-testid="stButton"] button p {font-size: 0.74rem; white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; text-align: left; max-width: 100%;}
-.st-key-agentstrip div[data-testid="stButton"] button div {max-width: 100%; overflow: hidden; justify-content: flex-start;
-    text-align: left; margin: 0;}
+.tab-intro {font-size: 0.74rem; opacity: 0.6; margin: -4px 0 4px 0;}
+.st-key-agentgrid [data-testid="stHorizontalBlock"] {gap: 0.4rem;}
+.st-key-agentgrid div[data-testid="stButton"] button {justify-content: flex-start; text-align: left; padding: 4px 9px;
+    min-height: 4.7rem; height: 4.7rem; overflow: hidden; align-items: flex-start;}
+.st-key-agentgrid div[data-testid="stButton"] button div, .st-key-agentgrid div[data-testid="stButton"] button p {
+    text-align: left; justify-content: flex-start; max-width: 100%; margin: 0;}
+.st-key-agentgrid div[data-testid="stButton"] button p {font-size: 0.76rem; line-height: 1.3; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;}
 .st-key-controlbar [data-testid='stHorizontalBlock'] {gap: 0.4rem;}
 .st-key-controlbar button {padding-left: 0.45rem; padding-right: 0.45rem;}
 .st-key-controlbar button p, .st-key-controlbar label p {font-size: 0.84rem; white-space: nowrap;}
@@ -101,11 +102,8 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 div[data-testid="stButton"] button[kind="tertiary"] {padding: 0; min-height: 1.4rem; font-weight: 600;}
 .st-key-feedbox, .st-key-neglist, .st-key-negdetail,
 div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdetail) {
-    height: calc(100vh - 620px) !important; max-height: calc(100vh - 620px) !important; min-height: 180px;
-    flex: 0 0 calc(100vh - 620px) !important;}
-.st-key-feedbox_tall, div:has(> .st-key-feedbox_tall) {
-    height: calc(100vh - 500px) !important; max-height: calc(100vh - 500px) !important; min-height: 220px;
-    flex: 0 0 calc(100vh - 500px) !important;}
+    height: calc(100vh - 308px) !important; max-height: calc(100vh - 308px) !important; min-height: 180px;
+    flex: 0 0 calc(100vh - 308px) !important;}
 .st-key-neglist div[data-testid="stButton"] button[kind="tertiary"] {text-align: left; font-size: 0.78rem;
     line-height: 1.25; justify-content: flex-start;}
 .st-key-neglist div[data-testid="stVerticalBlock"] {gap: 0.1rem;}
@@ -125,8 +123,7 @@ div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdet
 .convo .cv b span[title] {cursor: help;}
 .cv-n {margin: 0 0 3px 3.4rem; font-size: 0.76rem; opacity: 0.62;}
 .ai-tag {font-size: 0.68rem; opacity: 0.7; cursor: help; border-bottom: 1px dotted currentColor;}
-.st-key-feedbox div[data-testid="stButton"] button[kind="tertiary"],
-.st-key-feedbox_tall div[data-testid="stButton"] button[kind="tertiary"] {justify-content: flex-start; text-align: left;}
+.st-key-feedbox div[data-testid="stButton"] button[kind="tertiary"] {justify-content: flex-start; text-align: left;}
 .tl-step {border-left: 2px solid rgba(128,128,128,.35); margin: 0 0 0 7px; padding: 3px 0 5px 12px; font-size: 0.8rem;
           position: relative;}
 .tl-dot {position: absolute; left: -9px; top: 3px; font-size: 0.72rem;}

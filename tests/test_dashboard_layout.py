@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from dashboard import agent_views, eval_catalog, eval_views, map_view, panels
 from sim.runner import run
 from tests.test_generator_runner import PLACES, SMALL, roads
@@ -157,3 +160,47 @@ def test_resource_table_shows_every_version_with_one_decimal():
     head = eval_catalog.resources(CATALOG, lambda e: {"summary": {"metrics": {"greedy": {}, "agents": {}}}}
                                   if e != "e-gone" else loader(e))
     assert [h["label"] for h in head] == ["Greedy", "LLM"]
+
+
+def test_only_the_kpi_cards_sit_above_the_tabs():
+    import ast
+    from pathlib import Path
+    tree = ast.parse((Path(__file__).resolve().parent.parent / "dashboard" / "app.py").read_text())
+    side = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "side_panel")
+    called = {n.func.attr for n in ast.walk(side) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    assert "kpi_cards_html" in called and "render" in called
+    assert not called & {"units_html", "hospitals_html", "agents_grid"}
+
+
+TABS_SCRIPT = """
+import sys
+from streamlit.testing.v1 import AppTest
+
+def page(run_dir, run_id, tab, agents):
+    import streamlit as st
+    from pathlib import Path
+    from dashboard import feed, run_store
+    from sim import metrics
+    data = run_store.load_run(run_id, Path(run_dir))
+    st.session_state.feed = tab
+    feed.render("k", data, 6, agents, 300, None, metrics.at_minute(data["victims"], data["timeline"], data["events"], 6))
+
+for tab in ("Conversations", "Agents", "Resources", "Log"):
+    for agents in (True, False):
+        at = AppTest.from_function(page, args=(sys.argv[1], sys.argv[2], tab, agents)).run(timeout=60)
+        assert not at.exception, (tab, agents, at.exception)
+"""
+
+
+def test_feed_tabs_render_without_errors(tmp_path):
+    """Every tab, with and without agents, in a real Streamlit script run (its own process: AppTest replaces
+    __main__, which would break the evaluation tests' worker processes)."""
+    import subprocess
+    import sys
+    data, _ = minute_of(tmp_path)
+    root = Path(__file__).resolve().parent.parent
+    script = tmp_path / "tabs_check.py"
+    script.write_text(TABS_SCRIPT)
+    out = subprocess.run([sys.executable, str(script), str(tmp_path), data["run_id"]], cwd=root,
+                         capture_output=True, text=True, timeout=180, env={**os.environ, "PYTHONPATH": str(root)})
+    assert out.returncode == 0, out.stderr[-2000:]

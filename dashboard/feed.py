@@ -1,17 +1,22 @@
-"""The feed on the Simulation page (DESIGN 13.2): Incidents (each incident's conversation) and Log.
+"""The tabs under the KPI cards on the Simulation page (DESIGN 13.2): Conversations, Agents, Resources, Log.
 
-Everything is formatted from the run's logged data at the playback minute (dashboard/conversation.py and
-dashboard/wording.py); results are cached per run and minute because the page redraws several times a second.
+Everything is formatted from the run's logged data at the playback minute (dashboard/conversation.py,
+dashboard/agents_tab.py and dashboard/wording.py); results are cached per run and minute because the
+page redraws several times a second.
 """
 from __future__ import annotations
 
 import streamlit as st
 
-from dashboard import agent_strip, agent_views, conversation, explain_agents, panels
+from dashboard import agent_views, agents_tab, conversation, explain_agents, panels
 
-FEEDS = ("Incidents", "Log")
-HELP = ("Incidents: what the agents said to each other about each incident, active ones first. "
-        "Log: the raw event list, for debugging.")
+FEEDS = ("Conversations", "Agents", "Resources", "Log")
+INTROS = {"Conversations": "Messages between agents, grouped by incident.",
+          "Agents": "What each agent is doing right now. Click one to see its messages.",
+          "Resources": "Ambulances, teams and hospital capacity.",
+          "Log": "Every event, in time order, for debugging."}
+GREEDY = {"Conversations": "The greedy baseline doesn't negotiate; its decisions are in the Log.",
+          "Agents": "The greedy baseline has no agents."}
 
 
 @st.cache_resource(max_entries=8, show_spinner=False)
@@ -40,32 +45,15 @@ def entries_at(key: str, minute: int, _run: dict, _roads) -> list[dict]:
 def conversation_at(key: str, minute: int, incident: str, agent: str | None, _run: dict, _roads) -> str:
     ctx = context(key, minute, _run, _roads)
     ids = [i["id"] for i in _run["timeline"][minute]["incidents"]]
-    lines = agent_strip.only(conversation.conversation(ctx, incident, ids), agent)
+    lines = agents_tab.only(conversation.conversation(ctx, incident, ids), agent)
     if agent and not lines:
         return f"<div class='cv-n'>· {conversation.name(agent)} has not said or been asked anything here yet.</div>"
     return conversation.conversation_html(lines)
 
 
 @st.cache_data(max_entries=600, show_spinner=False)
-def strip_at(key: str, minute: int, _run: dict, _roads) -> list[dict]:
-    return agent_strip.rows(context(key, minute, _run, _roads))
-
-
-def pick_agent(agent: str) -> None:
-    """Filter the conversations to one agent; clicking it again shows everyone."""
-    st.session_state.agent_filter = None if st.session_state.get("agent_filter") == agent else agent
-    st.session_state.feed = FEEDS[0]
-
-
-def agents_strip(key: str, run: dict, minute: int, roads) -> None:
-    """One line per agent (DESIGN 13.2): status, mood, pending requests, last message; click to filter."""
-    picked = st.session_state.get("agent_filter")
-    with st.container(key="agentstrip"):
-        for row in strip_at(key, minute, run, roads):
-            st.button(("▸ " if row["id"] == picked else "") + agent_strip.label(row), key=f"agent_{row['id']}",
-                      type="tertiary", on_click=pick_agent, args=(row["id"],), width="stretch",
-                      help=(row["last_text"] or "No message yet")
-                      + "\n\nClick to show only this agent's messages in the conversations; click again for all.")
+def cards_at(key: str, minute: int, _run: dict, _roads) -> list[dict]:
+    return agents_tab.cards(context(key, minute, _run, _roads))
 
 
 def select(incident: str) -> None:
@@ -73,20 +61,53 @@ def select(incident: str) -> None:
     st.session_state.update(story=incident, focus=incident)
 
 
-def render(key: str, run: dict, minute: int, agents: bool, height: int, roads=None) -> None:
-    if agents:
-        agents_strip(key, run, minute, roads)
-    else:
+def pick_agent(agent: str) -> None:
+    """Open Conversations filtered to one agent; picking it again shows everyone."""
+    st.session_state.agent_filter = None if st.session_state.get("agent_filter") == agent else agent
+    st.session_state.feed = FEEDS[0]
+
+
+def clear_agent() -> None:
+    st.session_state.agent_filter = None
+
+
+def render(key: str, run: dict, minute: int, agents: bool, height: int, roads=None, m: dict | None = None) -> None:
+    if not agents:
         st.session_state.agent_filter = None
     if st.session_state.get("feed") not in FEEDS:
         st.session_state.feed = FEEDS[0]
-    feed = st.segmented_control("Feed", FEEDS, key="feed", required=True, label_visibility="collapsed", help=HELP)
-    with st.container(height=height, border=True, key="feedbox" if agents else "feedbox_tall"):
-        if feed == "Log":
+    feed = st.segmented_control("Feed", FEEDS, key="feed", required=True, label_visibility="collapsed",
+                                help="Conversations: what the agents said, by incident. Agents: what each one is doing. "
+                                     "Resources: units and hospital capacity. Log: the raw events.")
+    with st.container(height=height, border=True, key="feedbox"):
+        st.markdown(f"<div class='tab-intro'>{INTROS[feed]}</div>", unsafe_allow_html=True)
+        if not agents and feed in GREEDY:
+            st.caption(GREEDY[feed])
+        elif feed == "Log":
             st.markdown(panels.events_html(panels.event_feed(run["events"], minute, n=80, agents=True), minute),
                         unsafe_allow_html=True)
+        elif feed == "Resources":
+            state = run["timeline"][minute]
+            st.markdown(panels.units_html(state, m) + panels.hospitals_html(state, m), unsafe_allow_html=True)
+        elif feed == "Agents":
+            agents_grid(key, run, minute, roads)
         else:
             incidents_tab(key, run, minute, roads)
+
+
+def agents_grid(key: str, run: dict, minute: int, roads) -> None:
+    """One card per agent, two columns; clicking a card opens its messages in Conversations."""
+    picked = st.session_state.get("agent_filter")
+    cards = cards_at(key, minute, run, roads)
+    with st.container(key="agentgrid"):
+        for i in range(0, len(cards), 2):
+            cols = st.columns(2, gap="small")
+            for col, card in zip(cols, cards[i:i + 2]):
+                col.button(agents_tab.card_label(card), key=f"agent_{card['id']}", width="stretch",
+                           type="primary" if card["id"] == picked else "secondary",
+                           on_click=pick_agent, args=(card["id"],),
+                           help=(card["last_text"] or "No message yet") + "\n\nClick to see only this agent's "
+                                "messages in Conversations.")
 
 
 def incidents_tab(key: str, run: dict, minute: int, roads) -> None:
@@ -99,7 +120,7 @@ def incidents_tab(key: str, run: dict, minute: int, roads) -> None:
         left, right = st.columns([3, 1], vertical_alignment="center")
         left.markdown(f"<div class='cv-n' style='margin-left:0'>Showing {conversation.name(agent)} only</div>",
                       unsafe_allow_html=True)
-        right.button("Show all", key="agent_all", type="tertiary", on_click=pick_agent, args=(agent,))
+        right.button("Show all", key="agent_all", type="tertiary", on_click=clear_agent)
     ids = [r["id"] for r in rows]
     chosen = st.session_state.get("story") or st.session_state.get("focus")
     if chosen not in ids:

@@ -94,9 +94,9 @@ dashboard/
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
   evaluation_page.py   # the Evaluation page: final-results overview, picker, results, Run a new evaluation
   eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
-  feed.py              # the Simulation page's feed: Incidents (conversations) and Log
+  feed.py              # the right panel's tabs: Conversations, Agents, Resources, Log
   names.py             # hospital display names (display only; run files keep the internal names)
-  agent_strip.py       # the Agents strip: one line per agent (status, mood, requests, last message), click to filter
+  agents_tab.py        # the Agents tab: one card per agent (plain status, mood, last message), click to filter
   versions.py          # the Version choice (the four evaluated systems) and the recordings a replay can use
   wording.py           # every event, message, reason and decision code in plain English (tests/test_wording.py)
   conversation.py      # each incident's agent conversation, one line per message (the Incidents tab)
@@ -309,6 +309,7 @@ Agreed with the user after Phase 5: runs happen in real time instead of being co
 - [x] Conversation feed: each incident's agent conversation in time order (sender → recipients, reason in the sentence, "·" narrator lines for world events, guard blocks and folded repeats), Between hospitals entry, replacing the stories.
 - [x] Dashboard fixes and required metrics: one Version dropdown (Replay/Live, recording per seed) with the status line always matching it; labelled buttons; six KPI cards; unit free now and busy so far; hospital staff free and use so far; unit dots named on hover; Evaluation page resource use and conflicts table, plain ablation sentences, one decimal; allocation conflicts and hospital utilization metrics back-filled by replay (DESIGN 11.1, 11.2).
 - [x] Assignment check: Agents strip (one line per agent, click filters the conversations), KPI cards in one row, "Unserved critical victims" everywhere, the mapping to the assignment's agents and why scenarios come from a seeded generator (README, DESIGN 4).
+- [x] Right panel: KPI cards on top, then four tabs (Conversations, Agents as a 2-column card grid with plain statuses, Resources, Log), each opening with a grey line saying what it shows.
 - [x] Polish: neutral hospital display names, no overlapping map labels (walk-ins and parked vehicles on hover), feed fills the window, Negotiations as list + detail with merged bubbles, hospital chips and plain wording.
 
 ## Things not to do
