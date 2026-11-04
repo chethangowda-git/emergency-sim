@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 
 from coordination.dispatch import DispatchAgent
 from coordination.llm import LLMClient
@@ -74,34 +73,10 @@ def test_metrics_ignore_guard_events(tmp_path):
 
 # ----- plain-language templates -----
 
-def test_victim_status_against_the_deadline():
-    v = {"deadline": 60}
-    assert explain.victim_status(v, 30, 40, None) == "on track"          # 20 minutes to spare
-    assert explain.victim_status(v, 30, 50, None) == "tight"             # 10 minutes
-    assert explain.victim_status(v, 30, 65, None) == "late"
-    assert explain.victim_status(v, 61, None, None) == "late"
-    assert explain.victim_status(v, 70, None, (55, "H1")) == "on time"
-    assert explain.victim_status({"deadline": None}, 10, None, None) == "on track"
-
 
 def saved(tmp_path, policy="agents"):
     out = run(5, policy, runs_dir=tmp_path, cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
     return run_store.load_run(out.name, tmp_path)
-
-
-def test_incident_cards_follow_the_run(tmp_path):
-    data = saved(tmp_path)
-    first = data["timeline"][1]["incidents"][0]["id"]
-    cards = explain.incident_cards(data, 1, [])
-    card = next(c for c in cards if c["id"] == first)
-    assert card["open"] and card["steps"][0] and card["title"].startswith(first)
-    assert all(r["status"] in ("on track", "tight", "late") for r in card["victims"])
-    end = explain.incident_cards(data, len(data["timeline"]) - 1, [])
-    done = [c for c in end if not c["open"]]
-    assert done and all(c["steps"] == [True] * 5 for c in done)
-    assert [c["open"] for c in end] == sorted((c["open"] for c in end), reverse=True)   # finished ones last
-    html = explain.incident_card_html(card, focus=True)
-    assert "set_destination" not in html and "class='icard" in html and "focus" in html
 
 
 def test_now_sentence_names_what_happened(tmp_path):
@@ -113,60 +88,12 @@ def test_now_sentence_names_what_happened(tmp_path):
     assert explain.quiet_line(quiet) == "all quiet, no incident open"
 
 
-def test_negotiations_read_as_questions_with_outcomes(tmp_path):
-    from dashboard.agent_views import thread_index
-
-    data = saved(tmp_path)
-    severity = {v["id"]: v["original_severity"] for v in data["victims"]}
-    views = explain_agents.thread_views(thread_index(data["events"]), len(data["timeline"]) - 1, severity)
-    admission = next(v for v in views if v["protocol"] == "Admission")
-    assert admission["title"].startswith("Where should ") and admission["title"].endswith(" go?")
-    assert admission["verdict"] in ("agreed", "escalated to referee", "no deal", "in progress")
-    assert all("_" not in b["text"] for b in admission["bubbles"])
-    assert explain_agents.verdict("Referee: least bad at H1") == "escalated to referee"
-    assert explain_agents.verdict("award declined by H2") == "no deal"
-    assert explain_agents.verdict("awarded to H1, reserved") == "agreed"
-    assert explain_agents.plan_text("wait:ALS1") == "wait for ALS1 to free up"
-
-
-def test_ai_decisions_show_the_rules_alternative_and_guard_cards_merge():
-    call = {"agent": "H1", "purpose": "admission", "input": {"t": 40, "mood": "normal", "options": ["accept_now",
-            "after_transfer"], "request": {"victims": [{"id": "I04-V3"}]},
-            "option_details": {"after_transfer": {"conditional": [{"victims": ["I04-V3"]}]}}},
-            "output": {"option_id": "after_transfer", "reason": "keeps capacity"}}
-    events = [{"seq": 1, "t": 40, "type": "agent_decision", "agent": "H1", "kind": "admission_offer",
-               "decided_by": "llm", "reason": "keeps capacity", "accept": [], "thread": "TH1"},
-              {"seq": 2, "t": 41, "type": "agent_decision", "agent": "H1", "kind": "admission_offer",
-               "decided_by": "rule", "reason": "normal: accept now", "accept": ["I05-V1"], "thread": "TH2"}]
-    events += [{"seq": 3 + k, "t": 42 + k, "type": "guard", "rule": "G1", "agent": "H2", "why": "cooldown",
-                "thread": "TH3", "incident": "I06", "withheld": "after transfer"} for k in range(3)]
-    calls = explain_agents.match_calls(events, [call])
-    assert calls == {1: call}
-    cards = explain_agents.decision_cards(events, 60, {}, calls, show_all=False)
-    assert [c["badge"] for c in cards] == ["guard-option", "llm"]                 # the rule's own decision hidden
-    guard, ai = cards
-    assert guard["times"] == 3 and guard["t"] == 44
-    assert ai["why"] == "keeps capacity" and ai["other"] == "rule: accept whoever fits now"
-    assert "once a patient is transferred out" in ai["decided"]
-    assert len(explain_agents.decision_cards(events, 60, {}, calls, show_all=True)) == 3
-    html = explain_agents.decision_html(ai)
-    assert ">AI<" in html and "Rule would have chosen: accept whoever fits now" in html and "AI&#x27;s words" in html
-
-
-def test_hospital_cards_list_patients_offers_and_walk_ins(tmp_path):
-    data = saved(tmp_path)
-    cards = explain.hospital_cards(data, len(data["timeline"]) - 1)
-    assert [c["id"] for c in cards] == [h["id"] for h in data["timeline"][0]["hospitals"]]
-    assert all(c["mood"] in ("eager", "normal", "protective") for c in cards)
-    assert sum(c["walk_ins"] for c in cards) == sum(1 for e in data["events"] if e["type"] == "walk_in")
-    assert "<b>" in explain.hospital_card_html(cards[0])
-
-
 def test_every_tooltip_term_has_text():
     assert all(explain.GLOSSARY[t] for t in ("Criticals on time", "Unserved criticals", "Avg to care", "Delivered",
                                              "on track", "tight", "late", "Guard", "Referee"))
-    assert "title='" in explain.tip("tight") and explain.unit_name("ALS2") == "paramedic ambulance ALS2"
-    assert explain.count_units("BLS", 2) == "2 basic ambulances"
+    from dashboard import wording as W
+    assert "title='" in explain.tip("tight") and W.unit_name("ALS2") == "paramedic ambulance ALS2"
+    assert W.count_units("BLS", 2) == "2 basic ambulances"
 
 
 # ----- map labels, display names, negotiation list and chips -----
@@ -222,19 +149,6 @@ def admission_messages():
     return out
 
 
-def test_one_bubble_for_a_message_to_several_hospitals_with_the_heads_up_folded_in():
-    severity = {"I02-V2": "critical"}
-    bubbles = explain_agents.bubbles_of(admission_messages(), 11, severity)
-    first = bubbles[0]
-    assert first["to"] == ["H1", "H2", "H3"] and first["heads_up"]
-    assert first["text"] == "Can you take I02's critical victim?" and first["ids"] == ["I02-V2"]
-    assert len(bubbles) == 3                                     # the request, then each hospital's offer
-    html = explain_agents.thread_detail_html({"id": "TH9", "title": "t", "verdict": "in progress",
-                                              "outcome": "round 1 in progress", "rounds": 1, "chips": [],
-                                              "bubbles": bubbles})
-    assert "min 10" in html and "Heads-up and request" in html and "TH9" in html.split(">")[0]
-
-
 def test_hospital_chips_say_where_each_hospital_stands():
     ms = admission_messages()
     chips = {c["hospital"]: (c["text"], c["reason"]) for c in explain_agents.hospital_chips(ms)}
@@ -245,17 +159,9 @@ def test_hospital_chips_say_where_each_hospital_stands():
 
 
 def test_victims_read_as_phrases_with_ids_kept_for_tooltips():
+    from dashboard import wording as W
     sev = {"I02-V1": "critical", "I02-V2": "serious", "I03-V1": "minor", "I03-V2": "minor"}
-    assert explain_agents.victims_phrase(["I02-V1"], sev) == "I02's critical victim"
-    assert explain_agents.victims_phrase(["I03-V1", "I03-V2"], sev) == "I03's 2 minor victims"
-    assert explain_agents.victims_phrase(["I02-V1", "I02-V2"], sev) == "I02's critical and serious victims"
-    assert explain_agents.victims_phrase(["W03"], sev) == "patient W03"
-
-
-def test_unit_requests_say_what_was_sent_and_what_is_still_short():
-    ms = [msg(1, 5, "unit_request", "ia", "dispatch", vids=()),
-          msg(2, 6, "unit_response", "dispatch", "ia", vids=(), sent=["ALS1"], shortfall={"BLS": 1}, plan="wait:BLS3")]
-    assert explain_agents.unit_outcome(ms) == ("short of units",
-                                               "sent ALS1; still short of 1 basic ambulance: wait for BLS3 to free up")
-    ms[1]["proposed_action"].update(shortfall=None)
-    assert explain_agents.unit_outcome(ms) == ("units sent", "sent ALS1")
+    assert W.victims_phrase(["I02-V1"], sev) == "I02's critical victim"
+    assert W.victims_phrase(["I03-V1", "I03-V2"], sev) == "I03's 2 minor victims"
+    assert W.victims_phrase(["I02-V1", "I02-V2"], sev) == "I02's critical and serious victims"
+    assert W.victims_phrase(["W03"], sev) == "patient W03"

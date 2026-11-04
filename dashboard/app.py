@@ -196,11 +196,10 @@ HOW_TO_READ = """**How to read this**
 
 1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
    carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
-   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its card.
-2. **The incident cards** (right). Each incident shows its progress (reported → units sent → scene cleared →
-   transporting → all at hospital) and where every victim is, with **on track / tight / late** against their
-   deadline. **Negotiations** shows how hospitals were chosen, **Decisions** where the AI made a judgment call
-   and why (its own words), and where the guard stepped in.
+   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its story.
+2. **The incident stories** (right). Click an incident to read what happened there, step by step: the units
+   that came, which hospitals were asked and what each one answered, any decision by the referee, and how each
+   patient ended. **(AI)** marks a decision the AI made; hover it for the AI's own words.
 3. **The results** (top right): critical victims who reached care in time, those not yet served, average time
    to care and victims delivered. The **Evaluation** page compares the policies over 20 scenarios.
 """
@@ -467,7 +466,7 @@ def main_map(run: dict, t: float) -> None:
     if objects and marker != st.session_state.get("map_pick"):
         st.session_state.map_pick = marker
         if picked:
-            st.session_state.update(focus=picked, feed="Incidents", f_incident="All")
+            st.session_state.update(focus=picked, story=picked, feed="Incidents")
 
 
 def side_panel(key: str, run: dict, minute: int) -> None:
@@ -593,7 +592,7 @@ def highlights_list(where: str) -> None:
                       f"{escape(h['label'])} · {escape(W.minute_tag(h['minute']))}</div>{extra}</div>",
                       unsafe_allow_html=True)
         go.button("Jump to this moment", key=f"hl_{where}_{k}", on_click=jump_to, args=(h,),
-                  help="Opens that run, paused at this minute, with the incident selected in Negotiations")
+                  help="Opens that run, paused at this minute, with the incident's story open")
 
 
 def jump_to(h: dict) -> None:
@@ -607,8 +606,7 @@ def jump_to(h: dict) -> None:
         st.session_state.notice = ("error", "That run's recording is not on this machine.")
         return
     open_run(built[key])
-    st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], feed="Negotiations",
-                            neg_incident=h["incident"], f_incident="All", f_agent="All")
+    st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], story=h["incident"], feed="Incidents")
 
 
 def evaluation() -> None:
