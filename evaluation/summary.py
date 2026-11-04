@@ -24,6 +24,10 @@ METRICS = {
     "deadlines_missed": ("Deadlines missed", -1),
     "avg_response_time_min": ("Avg response time (min)", -1),
     "unit_utilization_pct": ("Unit utilization (%)", 0),
+    "als_utilization_pct": ("ALS utilization (%)", 0),
+    "bls_utilization_pct": ("BLS utilization (%)", 0),
+    "fire_utilization_pct": ("Fire team utilization (%)", 0),
+    "allocation_conflicts": ("Allocation conflicts", -1),
     "transfers": ("Transfers between hospitals", 0),
     "reroutes": ("Reroutes", 0),
     "escalations": ("Escalations", 0),
@@ -46,6 +50,10 @@ def flatten(m: dict) -> dict:
         "idle_minutes": sum(m["idle_minutes"].values()),
         "overload_minutes": sum(m["overload_minutes"].values()),
         "unit_utilization_pct": m["unit_utilization_pct"].get("overall"),
+        "als_utilization_pct": m["unit_utilization_pct"].get("ALS"),
+        "bls_utilization_pct": m["unit_utilization_pct"].get("BLS"),
+        "fire_utilization_pct": m["unit_utilization_pct"].get("FIRE"),
+        "allocation_conflicts": m.get("allocation_conflicts"),       # absent in runs saved before it existed
         "escalations": neg.get("escalations", 0),
         "threads": neg.get("threads", 0),
         "deals_without_arbiter": neg.get("deals_without_arbiter", 0),
@@ -119,6 +127,6 @@ def claim(summary: dict, policy: str = "agents") -> str | None:
     a = summary["metrics"][policy][PRIMARY]["mean"]
     b = summary["metrics"][summary["baseline"]][PRIMARY]["mean"]
     w = summary["versus_baseline"][policy]["wins"]
-    return (f"With the same seeds, incidents, walk-ins and resources, the multi-agent system got {a}% of "
-            f"critical victims to care on time versus {b}% for the greedy baseline, winning on "
+    return (f"With the same seeds, incidents, walk-ins and resources, the multi-agent system got {a:.1f}% of "
+            f"critical victims to care on time versus {b:.1f}% for the greedy baseline, winning on "
             f"{w['wins']} of {w['seeds']} seeds.")

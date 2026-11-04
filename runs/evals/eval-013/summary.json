@@ -118,6 +118,38 @@
     "n": 20,
     "repeat_sd": null
    },
+   "als_utilization_pct": {
+    "mean": 85.69,
+    "sd": 9.57,
+    "min": 62.5,
+    "max": 98.15,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 89.68,
+    "sd": 6.09,
+    "min": 74.54,
+    "max": 99.63,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 6.5,
+    "sd": 3.17,
+    "min": 0,
+    "max": 14,
+    "n": 20,
+    "repeat_sd": null
+   },
    "transfers": {
     "mean": 0,
     "sd": 0.0,
@@ -269,6 +301,38 @@
     "sd": 4.82,
     "min": 47.5,
     "max": 67.75,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "als_utilization_pct": {
+    "mean": 88.38,
+    "sd": 8.66,
+    "min": 62.69,
+    "max": 98.61,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 90.18,
+    "sd": 6.68,
+    "min": 68.52,
+    "max": 99.35,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 40.65,
+    "sd": 12.36,
+    "min": 16,
+    "max": 70,
     "n": 20,
     "repeat_sd": null
    },
@@ -426,6 +490,38 @@
     "n": 20,
     "repeat_sd": null
    },
+   "als_utilization_pct": {
+    "mean": 84.13,
+    "sd": 10.39,
+    "min": 59.26,
+    "max": 98.61,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 89.12,
+    "sd": 5.04,
+    "min": 75.46,
+    "max": 99.35,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 43.1,
+    "sd": 7.34,
+    "min": 22,
+    "max": 58,
+    "n": 20,
+    "repeat_sd": null
+   },
    "transfers": {
     "mean": 0.25,
     "sd": 0.55,
@@ -580,6 +676,38 @@
     "n": 20,
     "repeat_sd": null
    },
+   "als_utilization_pct": {
+    "mean": 82.74,
+    "sd": 12.64,
+    "min": 52.5,
+    "max": 98.61,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 88.18,
+    "sd": 8.58,
+    "min": 60.28,
+    "max": 99.35,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 45.2,
+    "sd": 10.06,
+    "min": 14,
+    "max": 61,
+    "n": 20,
+    "repeat_sd": null
+   },
    "transfers": {
     "mean": 0.1,
     "sd": 0.31,
@@ -702,6 +830,26 @@
     "diff": 1.07,
     "improvement_pct": 1.8,
     "better": null
+   },
+   "als_utilization_pct": {
+    "diff": 2.69,
+    "improvement_pct": 3.1,
+    "better": null
+   },
+   "bls_utilization_pct": {
+    "diff": 0.5,
+    "improvement_pct": 0.6,
+    "better": null
+   },
+   "fire_utilization_pct": {
+    "diff": 0.0,
+    "improvement_pct": 0.0,
+    "better": null
+   },
+   "allocation_conflicts": {
+    "diff": 34.15,
+    "improvement_pct": 525.4,
+    "better": false
    },
    "transfers": {
     "diff": 0.05,
@@ -828,6 +976,26 @@
     "improvement_pct": -1.2,
     "better": null
    },
+   "als_utilization_pct": {
+    "diff": -1.56,
+    "improvement_pct": -1.8,
+    "better": null
+   },
+   "bls_utilization_pct": {
+    "diff": -0.56,
+    "improvement_pct": -0.6,
+    "better": null
+   },
+   "fire_utilization_pct": {
+    "diff": 0.0,
+    "improvement_pct": 0.0,
+    "better": null
+   },
+   "allocation_conflicts": {
+    "diff": 36.6,
+    "improvement_pct": 563.1,
+    "better": false
+   },
    "transfers": {
     "diff": 0.25,
     "improvement_pct": null,
@@ -952,6 +1120,26 @@
     "diff": -1.48,
     "improvement_pct": -2.5,
     "better": null
+   },
+   "als_utilization_pct": {
+    "diff": -2.95,
+    "improvement_pct": -3.4,
+    "better": null
+   },
+   "bls_utilization_pct": {
+    "diff": -1.5,
+    "improvement_pct": -1.7,
+    "better": null
+   },
+   "fire_utilization_pct": {
+    "diff": 0.0,
+    "improvement_pct": 0.0,
+    "better": null
+   },
+   "allocation_conflicts": {
+    "diff": 38.7,
+    "improvement_pct": 595.4,
+    "better": false
    },
    "transfers": {
     "diff": 0.1,

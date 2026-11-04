@@ -12,7 +12,7 @@ from collections import defaultdict
 from html import escape
 
 from dashboard import wording as W
-from dashboard.explain_agents import hospital_chips, rule_choice
+from dashboard.explain_agents import rule_choice
 from dashboard.names import hospital_name
 
 BETWEEN = "between"

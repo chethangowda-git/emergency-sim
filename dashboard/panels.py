@@ -119,7 +119,10 @@ def event_feed(events: list[dict], t: int, n: int = 25, agents: bool = False) ->
 
 
 def fmt(value, suffix: str = "") -> str:
-    return "–" if value is None else f"{value}{suffix}"
+    """One decimal for measured values (39.6%), whole numbers as they are."""
+    if value is None:
+        return "–"
+    return f"{value:.1f}{suffix}" if isinstance(value, float) else f"{value}{suffix}"
 
 
 def kpis(m: dict) -> list[tuple[str, str]]:
@@ -174,22 +177,24 @@ def kpi_comparison(base: dict, agents: dict) -> pd.DataFrame:
 # ----- compact right panel (DESIGN 13.1): KPI cards, units on one line, one row per hospital -----
 
 UNIT_SHORT = {"ALS": "Paramedic (ALS)", "BLS": "Basic (BLS)", "FIRE": "Fire", "RESCUE": "Rescue", "HV": "Hospital vehicles"}
-KPI_TERMS = ("Criticals on time", "Unserved criticals", "Avg to care", "Delivered")
+KPI_TERMS = ("Criticals on time", "Unserved criticals", "Response", "Avg to care", "Delivered", "Conflicts")
 
 
 def kpi_cards(m: dict) -> list[tuple[str, str, str]]:
-    """(title, value, detail) for the four headline numbers."""
+    """(title, value, detail) for the six headline numbers, as they stand at the minute."""
     return [
         ("Criticals on time", fmt(m["critical_on_time_pct"], "%"), f"{m['criticals_on_time']} of {m['criticals_total']}"),
         ("Unserved criticals", fmt(m["unserved_criticals"]), "not delivered"),
-        ("Avg to care", fmt(m["avg_report_to_care_min"], " min"), "report → hospital"),
-        ("Delivered", fmt(m["victims_delivered"]), "victims at a hospital"),
+        ("Response", fmt(m["avg_response_time_min"], " min"), "to first ambulance"),
+        ("Avg to care", fmt(m["avg_report_to_care_min"], " min"), "to hospital"),
+        ("Delivered", fmt(m["victims_delivered"]), "victims"),
+        ("Conflicts", fmt(m.get("allocation_conflicts")), "allocation, so far"),
     ]
 
 
 def kpi_cards_html(m: dict) -> str:
-    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{tip(t)}</div><div class='kpi-v'>{v}</div>"
-                    f"<div class='kpi-d'>{d}</div></div>" for t, v, d in kpi_cards(m))
+    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{tip(t)}</div><div><span class='kpi-v'>{v}</span> "
+                    f"<span class='kpi-d'>{d}</span></div></div>" for t, v, d in kpi_cards(m))
     return f"<div class='kpis'>{cards}</div>"
 
 
@@ -203,26 +208,49 @@ def units_free(minute: dict) -> str:
     return " · ".join(parts)
 
 
-def units_free_line(minute: dict) -> str:
-    return f"<div class='units-line'>{tip('ALS', 'Free now:')} {units_free(minute)}</div>"
+def unit_status(minute: dict, m: dict) -> list[dict]:
+    """Per unit kind: free now, and the share of minutes busy so far (DESIGN 11.1 unit utilization)."""
+    out = []
+    for kind, short in UNIT_SHORT.items():
+        units = [u for u in minute["units"] if u["kind"] == kind]
+        if units:
+            out.append({"kind": kind, "name": short, "free": sum(1 for u in units if u["state"] in FREE),
+                        "total": len(units), "busy_pct": m["unit_utilization_pct"].get(kind)})
+    return out
 
 
-def hospital_line(h: dict) -> dict:
-    free_doctors = sum(1 for d in h["doctors"] if len(d["patients"]) < d["max"])
+def units_html(minute: dict, m: dict) -> str:
+    cells = "".join(f"<div class='res'><div class='res-n'>{tip(u['kind'], u['name']) if u['kind'] in ('ALS', 'BLS') else u['name']}"
+                    f"</div><div class='res-v'>{u['free']}/{u['total']} free</div>"
+                    f"<div class='res-d'>{fmt(u['busy_pct'], '%')} busy so far</div></div>"
+                    for u in unit_status(minute, m))
+    return f"<div class='resources'>{cells}</div>"
+
+
+def free_staff(staff: list[dict]) -> int:
+    return sum(1 for x in staff if len(x["patients"]) < x["max"])
+
+
+def hospital_line(h: dict, used_pct: float | None = None) -> dict:
     walk_ins = sum(1 for p in h.get("patients", []) if p["walk_in"])
     load = h["er_used"] / h["er_slots"] if h["er_slots"] else 0.0
     return {"name": hospital_label(h), "er": f"{h['er_used']}/{h['er_slots']}", "reserved": h["reserved"],
             "load_pct": round(100 * min(1.0, load)), "level": "full" if load >= 1 else "busy" if load >= 0.6 else "ok",
-            "free_doctors": free_doctors, "walk_ins": walk_ins}
+            "free_doctors": free_staff(h["doctors"]), "doctors": len(h["doctors"]),
+            "free_nurses": free_staff(h["nurses"]), "nurses": len(h["nurses"]), "walk_ins": walk_ins,
+            "used_pct": used_pct}
 
 
-def hospitals_html(minute: dict) -> str:
+def hospitals_html(minute: dict, m: dict | None = None) -> str:
     rows = []
-    for h in map(hospital_line, minute["hospitals"]):
+    used = (m or {}).get("hospital_utilization_pct") or {}
+    for h in (hospital_line(h, used.get(h["id"])) for h in minute["hospitals"]):
         reserved = f" (+{h['reserved']})" if h["reserved"] else ""
+        so_far = f" · {tip('Utilization', fmt(h['used_pct'], '%') + ' used so far')}" if h["used_pct"] is not None else ""
         rows.append(f"<div class='hosp'><span class='hosp-n'>{h['name']}</span> <span class='hosp-s'"
                     f" title='ER slots in use out of the total; (+n) reserved for ambulances on the way'>ER {h['er']}"
-                    f"{reserved} · doctors free {h['free_doctors']} · walk-ins {h['walk_ins']}</span>"
+                    f"{reserved}</span><span class='hosp-s'> · doctors free {h['free_doctors']}/{h['doctors']}"
+                    f" · nurses free {h['free_nurses']}/{h['nurses']} · walk-ins {h['walk_ins']}{so_far}</span>"
                     f"<div class='bar'><div class='fill {h['level']}' style='width:{h['load_pct']}%'></div></div></div>")
     return "".join(rows)
 

@@ -15,10 +15,21 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .clock .tag {opacity: 0.75;}
 .prog {height: 4px; background: rgba(128,128,128,.25); border-radius: 2px; margin: 3px 0 8px 0;}
 .prog > div {height: 100%; background: #2a78d6; border-radius: 2px;}
-.kpis {display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;}
-.kpi {border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 5px 8px;}
+.kpis {display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 5px;}
+.kpis .kpi {padding: 2px 8px;}
+.kpis .kpi-v {font-size: 1.05rem;}
+.kpis .kpi > div:last-child {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.st-key-controlbar [data-testid='stHorizontalBlock'] {gap: 0.4rem;}
+.st-key-controlbar button {padding-left: 0.45rem; padding-right: 0.45rem;}
+.st-key-controlbar button p, .st-key-controlbar label p {font-size: 0.84rem; white-space: nowrap;}
+.resources {display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 4px 0 6px 0;}
+.res {border: 1px solid rgba(128,128,128,.25); border-radius: 6px; padding: 2px 6px;}
+.res-n {font-size: 0.66rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.res-v {font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums;}
+.res-d {font-size: 0.64rem; opacity: 0.6;}
+.kpi {border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 4px 7px; min-width: 0;}
 .kpi-t {font-size: 0.7rem; opacity: 0.75;}
-.kpi-v {font-size: 1.3rem; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums;}
+.kpi-v {font-size: 1.15rem; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums;}
 .kpi-d {font-size: 0.66rem; opacity: 0.6;}
 .units-line {font-size: 0.82rem;}
 .hosp {margin: 0 0 5px 0;}
@@ -34,7 +45,9 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .agent-d {font-size: 0.72rem; opacity: 0.75;}
 .legend {font-size: 0.72rem; line-height: 1.7;}
 .legend span {transform: scale(0.9);}
-.headline {display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 6px;}
+.headline {display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px;}
+.removals {font-size: 0.86rem; margin: 0 0 6px 0; padding-left: 1.2rem;}
+.removals li, .removals li p {margin-bottom: 3px; font-size: 0.86rem !important;}
 .headline .kpi-v {font-size: 1.9rem;}
 .headline .kpi.focus {border-color: #2a78d6; border-width: 2px;}
 .steps {display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px;}
@@ -80,8 +93,8 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 div[data-testid="stButton"] button[kind="tertiary"] {padding: 0; min-height: 1.4rem; font-weight: 600;}
 .st-key-feedbox, .st-key-neglist, .st-key-negdetail,
 div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdetail) {
-    height: calc(100vh - 452px) !important; max-height: calc(100vh - 452px) !important; min-height: 220px;
-    flex: 0 0 calc(100vh - 452px) !important;}
+    height: calc(100vh - 530px) !important; max-height: calc(100vh - 530px) !important; min-height: 220px;
+    flex: 0 0 calc(100vh - 530px) !important;}
 .st-key-neglist div[data-testid="stButton"] button[kind="tertiary"] {text-align: left; font-size: 0.78rem;
     line-height: 1.25; justify-content: flex-start;}
 .st-key-neglist div[data-testid="stVerticalBlock"] {gap: 0.1rem;}

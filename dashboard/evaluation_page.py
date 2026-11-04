@@ -79,7 +79,7 @@ def start(settings: ev.EvalSettings, roads) -> None:
 
 def results(eval_id: str, playback_page) -> None:
     data = load(eval_id)
-    summary, s = data["summary"], data["settings"]
+    summary = data["summary"]
     st.markdown(f"#### {name_of(eval_id)} · `{eval_id}`")
     sentence = claim(summary)
     if sentence:
@@ -96,7 +96,7 @@ def results(eval_id: str, playback_page) -> None:
     headline(summary, focus)
 
     st.markdown("##### Criticals on time by policy")
-    st.caption("Mean over seeds; the whisker is ±1 standard deviation across seeds.")
+    st.caption("Mean over seeds; the whisker shows how much it varies by scenario (±1 standard deviation).")
     st.plotly_chart(eval_views.primary_bars(summary, theme(), focus), theme=None, width="stretch")
     st.dataframe(eval_views.wins_table(summary), width="stretch")
 
@@ -110,7 +110,7 @@ def results(eval_id: str, playback_page) -> None:
         st.caption("Criticals on time per seed")
         st.plotly_chart(eval_views.per_seed_dumbbell(summary, pick, theme()), theme=None, width="stretch")
 
-    with st.expander("All policies, every metric (mean ± sd across seeds)"):
+    with st.expander("All policies, every metric (mean ± how much it varies by scenario)"):
         st.dataframe(eval_views.policy_table(summary), width="stretch")
     with st.expander("Criticals on time per seed (table)"):
         st.dataframe(eval_views.per_seed_table(summary), width="stretch")
@@ -128,14 +128,14 @@ def baseline_only(data: dict, playback_page) -> None:
                                                ("Avg report → care", "avg_report_to_care_min", " min"),
                                                ("Deadlines missed", "deadlines_missed", ""),
                                                ("Victims delivered", "victims_delivered", ""))):
-        col.metric(f"{name} (mean)", f"{m[key]['mean']}{suffix}",
+        col.metric(f"{name} (mean)", f"{eval_views.d1(m[key]['mean'])}{suffix}",
                    delta=f"range {m[key]['min']}–{m[key]['max']}{suffix}", delta_color="off", delta_arrow="off")
     left, right = st.columns([3, 2])
     with left:
         st.markdown("##### Criticals on time per seed")
         st.plotly_chart(eval_views.per_seed_bars(summary, base, theme()), theme=None, width="stretch")
     with right:
-        st.markdown("##### Every metric (mean ± sd across seeds)")
+        st.markdown("##### Every metric (mean ± how much it varies by scenario)")
         st.dataframe(eval_views.policy_table(summary), width="stretch", height=670)
     open_in_playback(data, playback_page)
 
@@ -149,9 +149,9 @@ def headline(summary: dict, focus: str) -> None:
             ("Criticals on time", PRIMARY, "%", False), ("Avg report → care", "avg_report_to_care_min", " min", True),
             ("Victims delivered", "victims_delivered", "", False))):
         a, b = mine[key]["mean"], base[key]["mean"]
-        col.metric(f"{name} ({eval_views.label(focus).lower()})", f"{a}{suffix}",
+        col.metric(f"{name} ({eval_views.label(focus).lower()})", f"{eval_views.d1(a)}{suffix}",
                    delta=None if a is None or b is None
-                   else f"{a - b:+.2f}{' pts' if suffix == '%' else suffix} vs baseline",
+                   else f"{a - b:+.1f}{' pts' if suffix == '%' else suffix} vs baseline",
                    delta_color="inverse" if inverse else "normal")
     cols[3].metric("Seeds won", f"{wins['wins']} of {wins['seeds']}",
                    delta=f"{plural(wins['ties'], 'tie')}, {plural(wins['losses'], 'loss')}", delta_color="off")
@@ -183,6 +183,8 @@ def open_in_playback(data: dict, playback_page) -> None:
         if live is not None and not live.done:
             live.stop()
         st.session_state.update(live=None, spawn_mode=False, run_id=out.name, play_t=0.0, playing=False)
+        st.session_state.setdefault("opened_from", {})[out.name] = \
+            f"evals/{data['eval_id']}/runs/{ev.run_id_for(int(seed), policy, int(repeat))}"
         st.switch_page(playback_page)
 
 
@@ -197,11 +199,12 @@ def overview() -> None:
         st.info("The final evaluations are not on this machine yet. Run one below, or turn on "
                 "**Show all evaluations**.")
         return
+    d1 = eval_views.d1
     cards = "".join(
         f"<div class='kpi{' focus' if i.get('focus') else ''}'><div class='kpi-t'>{i['label']}</div>"
-        f"<div class='kpi-v'>{i['mean']}%</div><div class='kpi-d'>criticals on time · ± {i['sd']} across seeds"
-        + (f" · ± {i['repeat_sd']} across repeats" if i.get("repeat_sd") is not None else "") + "</div></div>"
-        for i in items)
+        f"<div class='kpi-v'>{d1(i['mean'])}%</div><div class='kpi-d'>criticals on time · varies by scenario: "
+        f"±{d1(i['sd'])}" + (f" · between repeats: ±{d1(i['repeat_sd'])}" if i.get("repeat_sd") is not None else "")
+        + "</div></div>" for i in items)
     st.markdown(f"<div class='headline'>{cards}</div>", unsafe_allow_html=True)
     left, right = st.columns([1, 1], gap="large")
     with left:
@@ -211,11 +214,17 @@ def overview() -> None:
         st.markdown("##### What each part contributes")
         rows = eval_catalog.contributions(catalog, load)
         st.dataframe(eval_views.contributions_table([r for r in rows if not r["side"]]), width="stretch")
-        st.caption("Against full rules-only agents:")
-        st.dataframe(eval_views.contributions_table([r for r in rows if r["side"]]), width="stretch")
+        st.markdown("**Taking one part away**", help="Each against the full system it was taken from")
+        st.markdown(eval_views.removals_html([r for r in rows if r["side"]]), unsafe_allow_html=True)
+    st.markdown("##### Resource use and conflicts")
+    st.caption("Mean per run over seeds 1-20; (±) is how much it varies by scenario. Allocation conflicts: times a "
+               "planned unit or bed could not be given as planned (refused actions, ambulances arriving to no free "
+               "slot, reservations taken by walk-ins, awards a hospital declined), counted the same way for every "
+               "version. Escalations happen only with agents, so they are shown apart.")
+    st.dataframe(eval_views.resource_table(eval_catalog.resources(catalog, load)), width="stretch")
     st.markdown("##### How we got here")
     steps = "".join(f"<div class='step'><b>{s['title']}</b> · <span class='num'>"
-                    f"{'–' if s['mean'] is None else str(s['mean']) + '%'}</span><br>{s['text']}</div>"
+                    f"{'–' if s['mean'] is None else d1(s['mean']) + '%'}</span><br>{s['text']}</div>"
                     for s in eval_catalog.timeline(catalog, load))
     st.markdown(f"<div class='steps'>{steps}</div>", unsafe_allow_html=True)
 

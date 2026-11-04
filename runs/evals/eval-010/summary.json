@@ -116,6 +116,38 @@
     "n": 20,
     "repeat_sd": null
    },
+   "als_utilization_pct": {
+    "mean": 85.69,
+    "sd": 9.57,
+    "min": 62.5,
+    "max": 98.15,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 89.68,
+    "sd": 6.09,
+    "min": 74.54,
+    "max": 99.63,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 6.5,
+    "sd": 3.17,
+    "min": 0,
+    "max": 14,
+    "n": 20,
+    "repeat_sd": null
+   },
    "transfers": {
     "mean": 0,
     "sd": 0.0,
@@ -270,6 +302,38 @@
     "n": 20,
     "repeat_sd": null
    },
+   "als_utilization_pct": {
+    "mean": 85.78,
+    "sd": 8.53,
+    "min": 64.07,
+    "max": 98.61,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "bls_utilization_pct": {
+    "mean": 88.79,
+    "sd": 6.51,
+    "min": 72.5,
+    "max": 99.35,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "fire_utilization_pct": {
+    "mean": 5.61,
+    "sd": 2.54,
+    "min": 0.0,
+    "max": 9.44,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "allocation_conflicts": {
+    "mean": 45,
+    "sd": 10.33,
+    "min": 21,
+    "max": 60,
+    "n": 20,
+    "repeat_sd": null
+   },
    "transfers": {
     "mean": 0.35,
     "sd": 0.67,
@@ -392,6 +456,26 @@
     "diff": -0.26,
     "improvement_pct": -0.4,
     "better": null
+   },
+   "als_utilization_pct": {
+    "diff": 0.09,
+    "improvement_pct": 0.1,
+    "better": null
+   },
+   "bls_utilization_pct": {
+    "diff": -0.89,
+    "improvement_pct": -1.0,
+    "better": null
+   },
+   "fire_utilization_pct": {
+    "diff": 0.0,
+    "improvement_pct": 0.0,
+    "better": null
+   },
+   "allocation_conflicts": {
+    "diff": 38.5,
+    "improvement_pct": 592.3,
+    "better": false
    },
    "transfers": {
     "diff": 0.35,

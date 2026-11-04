@@ -129,11 +129,11 @@ def test_rebuilt_run_matches_the_evaluated_metrics(tmp_path):
 def test_eval_tables_and_charts_read_a_saved_summary():
     summary = json.loads(json.dumps(summarize(ROWS)))                      # seed keys become strings
     seeds = eval_views.per_seed_table(summary)
-    assert seeds.loc[3].isna().tolist() == [True, False] and seeds.loc[3, "Agents"] == 100.0
+    assert seeds.loc[3].tolist() == ["–", "100.0"]                       # one decimal, '–' where it did not run
     table = eval_views.versus_table(summary, "agents")
-    assert table.loc["Criticals on time (%)"].tolist() == [50.0, 67.5, 17.5, "+35.0%", "✅ better"]
+    assert table.loc["Criticals on time (%)"].tolist() == ["50.0", "67.5", "+17.5", "+35.0%", "✅ better"]
     assert eval_views.wins_table(summary).loc["Agents"].tolist() == [1, 1, 1, 3, "33.3%"]
-    assert eval_views.policy_table(summary).loc["Criticals on time (%)", "Agents"] == "67.5 ± 23.63 (repeats ± 14.14)"
+    assert eval_views.policy_table(summary).loc["Criticals on time (%)", "Agents"] == "67.5 ± 23.6 (repeats ± 14.1)"
     bars = eval_views.primary_bars(summary)
     assert list(bars.data[0].y) == ["Greedy baseline", "Agents"]
     assert list(bars.data[0].marker.color) == [eval_views.MUTED, eval_views.ACCENT["dark"]]

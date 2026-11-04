@@ -26,12 +26,13 @@
      "vs": "+ coordination (assessment, dispatch, admissions; no negotiation)"},
     {"label": "+ LLM judgment with the guard", "eval": "eval-011", "policy": "agents",
      "vs": "+ hospital negotiation (full agents, rules only)"},
-    {"label": "Without the Arbiter (rules only)", "eval": "eval-013", "policy": "agents-noarb",
+    {"label": "Removing the referee (from rules-only agents)", "part": "the referee", "eval": "eval-013",
+     "policy": "agents-noarb", "vs": "+ hospital negotiation (full agents, rules only)", "side": true},
+    {"label": "Replacing hospital agents with fixed rules (from rules-only agents)", "part": "hospital agents",
+     "plural": true, "eval": "eval-013", "policy": "agents-rulehosp",
      "vs": "+ hospital negotiation (full agents, rules only)", "side": true},
-    {"label": "Rule hospitals instead of hospital agents", "eval": "eval-013", "policy": "agents-rulehosp",
-     "vs": "+ hospital negotiation (full agents, rules only)", "side": true},
-    {"label": "LLM judgment without the guard", "eval": "eval-012", "policy": "agents",
-     "vs": "+ hospital negotiation (full agents, rules only)", "side": true}
+    {"label": "Removing the guard (from LLM + guard)", "part": "the guard", "eval": "eval-012", "policy": "agents",
+     "vs": "+ LLM judgment with the guard", "side": true}
   ],
   "timeline": [
     {"title": "v1 · live LLM", "eval": "eval-008", "policy": "agents",

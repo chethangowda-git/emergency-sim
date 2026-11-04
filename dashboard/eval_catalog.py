@@ -69,8 +69,21 @@ def contributions(catalog: dict, loader: Loader) -> list[dict]:
         means[item["label"]] = s["mean"]
         ref = means.get(item.get("vs"))
         change = None if ref is None or s["mean"] is None else round(s["mean"] - ref, 1)
-        rows.append({"label": item["label"], "mean": s["mean"], "change": change, "side": item.get("side", False)})
+        rows.append({"label": item["label"], "mean": s["mean"], "change": change, "side": item.get("side", False),
+                     "part": item.get("part", "this part"), "plural": item.get("plural", False)})
     return rows
+
+
+def resources(catalog: dict, loader: Loader) -> list[dict]:
+    """The headline versions with all their summary metrics, for the resource use and conflicts table."""
+    out = []
+    for item in catalog.get("headline", []):
+        try:
+            metrics = loader(item["eval"])["summary"]["metrics"][item["policy"]]
+        except (FileNotFoundError, KeyError):
+            continue
+        out.append({"label": item["label"], "metrics": metrics})
+    return out
 
 
 def timeline(catalog: dict, loader: Loader) -> list[dict]:

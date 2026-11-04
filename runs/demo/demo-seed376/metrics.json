@@ -38,10 +38,22 @@
   "RESCUE": 0.0,
   "overall": 56.17
  },
+ "hospital_utilization_pct": {
+  "H1": 87.92,
+  "H2": 85.07,
+  "H3": 81.39
+ },
  "rejected_actions": 22,
  "rejected_by_reason": {
   "er_full": 20,
   "no_reservation": 2
+ },
+ "allocation_conflicts": 73,
+ "allocation_conflicts_by": {
+  "rejected_actions": 22,
+  "arrivals_no_slot": 3,
+  "reservations_broken": 4,
+  "awards_declined": 44
  },
  "victims_total": 29,
  "victims_delivered": 26,

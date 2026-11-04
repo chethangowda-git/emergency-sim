@@ -102,3 +102,21 @@ def test_at_minute_only_sees_the_past():
     m = metrics.at_minute(VICTIMS, TIMELINE, EVENTS, 1)
     assert m["criticals_total"] == 1 and m["criticals_on_time"] == 0
     assert m["rejected_actions"] == 0
+
+
+def test_hospital_utilization_is_the_average_over_the_minutes():
+    assert metrics.hospital_utilization(TIMELINE) == {"H1": 50.0, "H2": 50.0}
+    assert metrics.hospital_utilization(TIMELINE[:1]) == {"H1": 25.0, "H2": 100.0}
+
+
+def test_allocation_conflicts_count_every_kind_of_failed_plan():
+    events = [{"t": 1, "type": "action_rejected", "reason": "er_full"},
+              {"t": 2, "type": "arrived_no_slot", "unit": "ALS1", "hospital": "H1"},
+              {"t": 3, "type": "reservation_broken", "hospital": "H1"},
+              {"t": 4, "type": "message", "msg_type": "decline"},
+              {"t": 4, "type": "message", "msg_type": "admission_offer"},
+              {"t": 5, "type": "message", "msg_type": "escalation"}]
+    assert metrics.allocation_conflicts(events) == {
+        "allocation_conflicts": 4, "allocation_conflicts_by": {"rejected_actions": 1, "arrivals_no_slot": 1,
+                                                               "reservations_broken": 1, "awards_declined": 1}}
+    assert metrics.allocation_conflicts([])["allocation_conflicts"] == 0

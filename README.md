@@ -33,14 +33,28 @@ Values are means over the 20 seeds (repeats averaged per seed first); ± is the 
 | + coordination (incident assessment, dispatch by urgency, admissions; no negotiation) | 70.8% | +31.2 pts |
 | + hospital negotiation (full agents, rules only) | 84.6% | +13.8 pts |
 | + LLM judgment with the guard | **85.7%** | +1.0 pts |
-| *Alternatives, against full rules-only agents:* | | |
-| Without the Arbiter | 88.8% | +4.1 pts |
-| Rule hospitals instead of hospital agents | 70.8% | −13.8 pts |
-| LLM judgment without the guard | 79.2% | −5.4 pts |
+| *Taking one part away:* | | |
+| Removing the referee (from rules-only agents) | 88.8% | +4.1 pts (the referee currently costs points) |
+| Replacing hospital agents with fixed rules (from rules-only agents) | 70.8% | −13.8 pts (hospital agents add points) |
+| Removing the guard (from LLM + guard) | 79.2% | −6.5 pts (the guard adds points) |
+
+**Resource use and conflicts** (mean per run; ± is how much it varies by scenario):
+
+| Seeds 1 to 20 | Greedy | Agents, rules only | Agents, LLM + guard | Agents, LLM, no guard |
+|---|---|---|---|---|
+| Response time (report → first ambulance) | 48.3 min ± 23.0 | 32.1 min ± 17.4 | 33.1 min ± 16.7 | 34.6 min ± 17.0 |
+| Paramedic (ALS) / basic (BLS) / fire busy | 85.7 / 89.7 / 5.6% | 85.8 / 88.8 / 5.6% | 85.1 / 88.1 / 5.6% | 86.4 / 88.7 / 5.6% |
+| Hospital idle / overload minutes (all hospitals) | 66.6 / 843.3 | 60.8 / 772.4 | 59.4 / 780.0 | 60.5 / 776.1 |
+| ER load balance (peak gap, pts) | 53.3 | 55.4 | 57.0 | 47.1 |
+| Wasted hold minutes | 0.0 | 3.0 | 2.2 | 3.8 |
+| Allocation conflicts | 6.5 ± 3.2 | 45.0 ± 10.3 | 92.6 ± 16.7 | 218.7 ± 46.4 |
+| Escalations to the referee (apart) | 0.0 | 14.2 | 15.5 | 15.6 |
+
+An **allocation conflict** is a planned unit or bed that could not be given as planned: a refused world action, an ambulance arriving to no free slot, a reservation taken by a walk-in, or an award a hospital declined when it came to reserve (DESIGN 11.1). Greedy has few because it only ever picks a hospital with a free slot now and never negotiates; the agents plan ahead (awards, conditional offers, holds), and more of those plans fall through and are re-negotiated, most of all when the LLM's conditional offers are not checked by the guard. These numbers were added after the evaluation with `python -m tools.backfill_metrics`, which replays every evaluated run from its recorded calls (no API calls) and checks that every metric already saved comes out identical.
 
 Coordination itself gives the largest gain, and hospital negotiation the next. The Arbiter still costs about 4 points in rules-only mode (88.8% without it); this was not investigated, to avoid tuning on the evaluation seeds. Rule hospitals and no negotiation now give the same result (both 70.8%).
 
-**What it means.** Coordination by agents more than doubles criticals on time over the greedy baseline, with or without the LLM. With the guard, the LLM is now slightly ahead of rules only (+1.0 point; 8 wins, 8 ties, 4 losses), which is within the variation between seeds; it is no longer a cost. Without the guard it is 5.4 points behind rules only. The guard (`llm_guard` in `config/llm.json`, on by default) is the "LLM proposes, rules guard" step: the LLM still makes its choices, but rules check its conditional "after transfer" offers and its extra-unit requests (DESIGN 12.8).
+**What it means.** Coordination by agents more than doubles criticals on time over the greedy baseline, with or without the LLM. With the guard, the LLM is now slightly ahead of rules only (+1.0 point; 8 wins, 8 ties, 4 losses), which is within the variation between seeds; it is no longer a cost. Without the guard it is 5.4 points behind rules only (6.5 behind the guarded LLM). The guard (`llm_guard` in `config/llm.json`, on by default) is the "LLM proposes, rules guard" step: the LLM still makes its choices, but rules check its conditional "after transfer" offers and its extra-unit requests (DESIGN 12.8).
 
 ### How we got here
 
@@ -75,15 +89,15 @@ You only need Python 3.11 or newer installed. The first launch creates a virtual
 
 The dashboard opens at <http://localhost:8501>, with **Simulation** and **Evaluation** at the top. Each page fits one screen (1440 × 900): the controls are in one bar along the top, the map is on the left, and the numbers are on the right.
 
-The page opens ready to replay the **Demo**, a recorded run that forces negotiation (few burn beds, the trauma centre full, two criticals waiting for one paramedic ambulance): just press **▶ Run**. **⭐** lists the five moments in the recorded runs with the most real negotiation, with what the rule would have done instead and **Jump to this moment**. **❓** opens a three-step guide to reading the page, and every control and number has a tooltip (ⓘ).
+The page opens ready to replay the **Demo**, a recorded run that forces negotiation (few burn beds, the trauma centre full, two criticals waiting for one paramedic ambulance): just press **▶ Run**. **⭐ Highlights** lists the five moments in the recorded runs with the most real negotiation, with what the rule would have done instead and **Jump to this moment**. **❓ Help** opens a three-step guide to reading the page, and every control and number has a tooltip (ⓘ).
 
-1. Pick a **seed** (42 is the reference scenario) and the **policy** (greedy baseline or agents; for agents, the **LLM**: rules only, live, or replay of a recorded run), then press **▶ Run**. The run happens live and is saved when it reaches minute 359. The line under the bar shows **Min X / 359** and a progress bar.
+1. Pick a **seed** and a **Version**, named as on the Evaluation page: Greedy baseline, Agents (rules only), Agents (LLM + guard) or Agents (LLM, no guard). For the two LLM versions choose **Replay** (free, the default: pick a recording for that seed, or it tells you which seeds have one) or **Live** (calls the model and costs credit). Then press **▶ Run**. The run happens live and is saved when it reaches minute 359. The line under the bar shows **Min X / 359**, what is loaded, and a progress bar; it always matches the controls, because changing a free choice loads it at once (paused at minute 0) and a Live choice waits for Run.
 2. **⏸ Pause / ▶ Resume** stops and restarts the simulation itself, so you can read the panels at that minute. **⏭ 1 min** advances one minute and stays paused.
 3. **Speed:** 1x is one simulated minute per second; 0.5x, 2x, 4x and 10x are slower or faster. **Skip quiet time** (on by default) fast-forwards while no unit is moving and no incident is open, and drops back to your speed the moment an incident is reported or a unit sets off. Speed, pauses and skipping never change the outcome.
 4. **🚨 Spawn** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
-5. **⚙** holds the rarely used settings: incidents per scenario (4 by default; one is always the surge), **🎲 Restart with new seed** (waits at minute 0), **Past runs** (replayed from minute 0 with the same clock) and **Compare with baseline** (two maps side by side on one clock, with a KPI comparison table).
+5. **⚙ Settings** holds the rarely used settings: incidents per scenario (4 by default; one is always the surge), **🎲 Restart with new seed** (waits at minute 0), **Past runs** (replayed from minute 0 with the same clock) and **Compare with baseline** (two maps side by side on one clock, with a KPI comparison table).
 
-The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their name and ER use; hover one for its walk-ins, ward and staff, and the hospital vehicles parked there. Labels never sit on top of each other. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: four KPI cards (criticals on time, unserved criticals, average time to care, victims delivered), units free by type, one row per hospital with an ER bar, and a feed with five tabs, all following the clock:
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their name and ER use; hover one for its walk-ins, ward and staff, and the hospital vehicles parked there. Units are small coloured dots, named when you hover them, so they never cover the map's place names; the selected incident's units are labelled beside their markers. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: six KPI cards (criticals on time, unserved criticals, response time to the first ambulance, average time to care, victims delivered, allocation conflicts so far), a small card per unit kind (free now and how busy so far), one row per hospital with an ER bar (ER use, doctors and nurses free, walk-ins, use so far), and the feed, all following the clock:
 
 - **Incidents** (default): one line per incident, active ones first, then **Between hospitals** (staff loans and transfers that help no incident). Click one to read its conversation: what the agents said to each other, in time order, one line per message, for example "min 86 Dispatch → H1, H2: Can you take the critical patient? Arrives in about 10 min." and "min 87 H1 → Dispatch: No, my ER is full." Grey lines starting with "·" say what happened in the world (an ambulance left, a patient reached a hospital on time) and when the guard blocked an AI choice, naming the agent. Repeated rounds fold into one line. Hover a hospital ID for its name. Clicking an incident here or on the map highlights it and its units. **(AI)** after a line means that agent's AI decided it; hover it for the AI's own words and what the rule would have chosen.
 - **Log**: the raw event timeline, for debugging.
@@ -120,7 +134,7 @@ No live LLM run has been made yet. `config/llm.json` has `mode: off` and no mode
 
 ## Negotiation (Phase 3)
 
-Choose **agents** in the Policy menu to run the multi-agent system. Agents talk through messages, and each round costs a simulated minute; an escalation to the Arbiter costs 3. The world keeps moving while they negotiate.
+Choose an **Agents** version to run the multi-agent system. Agents talk through messages, and each round costs a simulated minute; an escalation to the Arbiter costs 3. The world keeps moving while they negotiate.
 
 - **Admission:** for each ambulance load, Dispatch runs a Contract Net with the hospitals (call for proposals, offers, award). The awarded hospital places a firm reservation, then Dispatch sets the destination.
 - **Other protocols:** mutual-aid vehicles, the swap, routine transfers between hospitals, staff loans, and rerouting an ambulance after a walk-in takes its reserved slot.

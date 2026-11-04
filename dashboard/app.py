@@ -6,6 +6,7 @@ tabbed feed on the right. Speed and skipping quiet time only pace the clock; the
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import sys
 import time
@@ -19,6 +20,7 @@ if str(ROOT) not in sys.path:
 import streamlit as st  # noqa: E402
 
 from dashboard import evaluation_page, explain, feed, map_view, panels, run_store, style  # noqa: E402
+from dashboard import versions as V  # noqa: E402
 from dashboard import wording as W  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
@@ -27,10 +29,8 @@ from sim.generator import SPAWN_MAX_VICTIMS, SPAWN_TYPES  # noqa: E402
 from sim.live import MINUTES_PER_SECOND_1X, QUIET_RATE, is_quiet  # noqa: E402
 from sim.runner import load_roads  # noqa: E402
 
-POLICY_LABELS = {"greedy": "greedy baseline", "agents": "agents", "agents-nonego": "agents, no negotiation",
-                 "agents-noarb": "agents, no Arbiter", "agents-rulehosp": "agents, rule hospitals"}
 PLAYBACK_POLICIES = ("greedy", "agents")  # the ablations live on the Evaluation page
-LLM_MODES = {"off": "Rules only", "live": "Live LLM", "replay": "Replay"}
+SOURCES = ("Replay", "Live")   # for the two LLM versions: a free replay of a recording, or live model calls
 
 SPEEDS = {"0.5x": 0.5, "1x": 1.0, "2x": 2.0, "4x": 4.0, "10x": 10.0}
 INCIDENT_CHOICES = (3, 4, 6, 12)
@@ -78,12 +78,14 @@ def rate() -> float:
 # ----- state: a live run, or a saved run being replayed -----
 
 def init_state() -> None:
-    """Opens on the intro (nothing playing): seed 42, agents, replaying a recorded final-evaluation run."""
+    """Opens on the intro (nothing playing), with the demo recording selected."""
     featured = run_store.featured_replay()
+    seed = run_store.run_config(featured)["seed"] if featured else 42
     defaults = {"run_id": None, "live": None, "play_t": 0.0, "playing": False, "last_tick": time.monotonic(),
-                "speed": "1x", "seed": 42, "spawn_mode": False, "notice": None, "skip_quiet": True,
-                "n_incidents": DEFAULT_INCIDENTS, "policy": "agents", "llm_mode": "replay" if featured else "off",
-                "replay_from": featured, "compare": False, "feed": feed.FEEDS[0], "focus": None}
+                "speed": "1x", "seed": seed, "spawn_mode": False, "notice": None, "skip_quiet": True,
+                "n_incidents": DEFAULT_INCIDENTS, "version": "llm-guard" if featured else "rules",
+                "source": SOURCES[0], "recording": featured, "compare": False, "feed": feed.FEEDS[0],
+                "focus": None, "loaded": None}
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
 
@@ -106,17 +108,18 @@ def open_run(run_id: str) -> None:
     st.session_state.update(run_id=run_id, play_t=0.0, playing=False)
 
 
-def start_live(seed: int, policy: str, llm_mode: str | None, replay_from: str | None, n_incidents: int,
+def start_live(version: str, seed: int, llm_mode: str | None, recording: str | None, n_incidents: int,
                paused: bool) -> None:
     stop_live()
     try:
-        lr = run_store.start_live(seed, policy, paused=paused, rate=rate(), roads=roads(), llm_mode=llm_mode,
-                                  replay_from=replay_from, n_incidents=n_incidents,
-                                  skip_quiet=st.session_state.skip_quiet)
+        lr = run_store.start_live(seed, V.policy(version), paused=paused, rate=rate(), roads=roads(),
+                                  llm_mode=llm_mode, replay_from=recording, n_incidents=n_incidents,
+                                  skip_quiet=st.session_state.skip_quiet, llm_guard=V.guard(version))
     except ValueError as exc:
         st.session_state.notice = ("error", str(exc))
         return
-    st.session_state.update(live=lr, run_id=None, playing=False, compare=False)
+    st.session_state.update(live=lr, run_id=None, playing=False, compare=False,
+                            loaded={"version": version, "recording": recording})
 
 
 def finish_live() -> None:
@@ -159,93 +162,155 @@ def baseline_id() -> str | None:
 # ----- the control bar -----
 
 def control_bar() -> None:
-    replaying = st.session_state.get("policy", "greedy") != "greedy" and st.session_state.llm_mode == "replay"
-    widths = ([0.5, 0.9, 0.8, 1.45, 0.55, 0.8, 0.65, 0.5, 1.0, 0.4, 0.42, 0.42, 0.42] if replaying
-              else [0.65, 1.1, 0.95, 0.75, 0.9, 0.75, 0.6, 1.15, 0.45, 0.42, 0.42, 0.42])
-    c = st.columns(widths, vertical_alignment="bottom")
-    if not replaying:
-        c.insert(3, st.empty())   # the recorded-run picker only takes room while replaying
-    c[0].number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed", disabled=replaying,
-                      help="Picks the scenario: incidents, victims and walk-ins. A replay uses its recorded seed.")
-    policy = c[1].selectbox("Policy", PLAYBACK_POLICIES, format_func=lambda p: POLICY_LABELS[p].capitalize(),
-                            key="policy", help="Greedy baseline: nearest unit, nearest hospital, no negotiation. "
-                                               "Agents: assessment, dispatch, hospital and referee agents negotiate.")
-    llm_mode, replay_from = llm_controls(c[2], c[3], policy)
-    c[4].button("▶ Run", type="primary", width="stretch", on_click=run_clicked,
-                args=(policy, llm_mode, replay_from), disabled=llm_mode == "replay" and not replay_from,
-                help="Starts the run from minute 0; it plays live and is saved at the end")
+    with st.container(key="controlbar"):
+        controls()
+
+
+def controls() -> None:
+    c = st.columns([0.42, 1.22, 0.78, 1.0, 0.5, 0.7, 0.6, 0.5, 1.02, 0.62, 0.74, 0.56, 0.84],
+                   vertical_alignment="bottom")
+    version, llm_mode, recording = version_controls(c[0], c[1], c[2], c[3])
+    c[4].button("▶ Run", type="primary", width="stretch", on_click=run_clicked, args=(version, llm_mode, recording),
+                disabled=not runnable(version, llm_mode, recording),
+                help="Starts the chosen version from minute 0; it plays live and is saved at the end")
     clock_buttons(c[5], c[6])
     c[7].selectbox("Speed", list(SPEEDS), key="speed", on_change=speed_changed,
                    help="1x = one simulated minute per second. Speed never changes what happens.")
-    c[8].toggle("Skip quiet time", key="skip_quiet", on_change=skip_changed,
+    c[8].toggle("Skip quiet", key="skip_quiet", on_change=skip_changed,
                 help="While no unit is moving and no incident is open, fast-forward; "
                      "back to the chosen speed when something happens")
     lr = live()
-    c[9].button("🚨", width="stretch", on_click=begin_spawn,
+    c[9].button("🚨 Spawn", width="stretch", on_click=begin_spawn,
                 disabled=lr is None or st.session_state.spawn_mode or lr.view() is None,
                 help="Place an incident: pauses, then click a street spot on the map")
-    with c[10].popover("⚙", help="More settings: incidents per scenario, new seed, past runs, compare"):
-        settings_popover(policy, llm_mode)
-    with c[11].popover("❓", help="How to read this page"):
+    with c[10].popover("⚙ Settings", help="Incidents per scenario, new seed, past runs, compare with the baseline"):
+        settings_popover(version, llm_mode)
+    with c[11].popover("❓ Help", help="How to read this page"):
         st.markdown(HOW_TO_READ)
-    with c[12].popover("⭐", help="Negotiation highlights: the moments with the most real negotiation"):
+    with c[12].popover("⭐ Highlights", help="Negotiation highlights: the moments with the most real negotiation"):
         highlights_list("pop")
 
 
-HOW_TO_READ = """**How to read this**
-
-1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
-   carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
-   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its conversation.
-2. **The conversations** (right). Click an incident to read what the agents said to each other about it, in
-   time order: "Dispatch → H1, H2: Can you take the critical patient?" and each hospital's answer with its
-   reason. Grey lines starting with "·" say what happened in the world. **(AI)** after a line means that
-   agent's AI decided it; hover it for the AI's own words. Hover a hospital (H1, H2, H3) for its name.
-3. **The results** (top right): critical victims who reached care in time, those not yet served, average time
-   to care and victims delivered. The **Evaluation** page compares the policies over 20 scenarios.
-"""
+@st.cache_data(ttl=30, show_spinner=False)
+def recordings_for(version: str, seed: int) -> dict[str, str]:
+    return V.recordings(version, seed)
 
 
-def llm_controls(mode_col, run_col, policy: str) -> tuple[str | None, str | None]:
-    """Live or replay (DESIGN 13.1): rules only, live model calls (recorded), or replay a recording."""
-    if policy == "greedy":
-        mode_col.selectbox("LLM", ["–"], disabled=True, key="llm_greedy", help="The baseline uses no AI")
-        return None, None
-    mode = mode_col.selectbox("LLM", list(LLM_MODES), format_func=LLM_MODES.get, key="llm_mode",
-                              help="Rules only: no AI. Live: the AI makes the judgment calls (recorded). "
-                                   "Replay: rerun a recorded run with the AI's recorded answers, exactly.")
-    if mode == "live":
-        cfg = load_llm_config()
-        if not (cfg.get("model") and os.environ.get("OPENAI_API_KEY")):
-            run_col.caption("Live needs a pinned model and OPENAI_API_KEY; using rules only.")
-            return "off", None
-    if mode == "replay":
-        runs = [p["path"] for p in run_store.replay_presets()] + run_store.replayable_runs(policy)
-        if not runs:
-            run_col.caption("No recorded runs to replay yet.")
-            return "replay", None
-        if st.session_state.get("replay_from") not in runs:
-            st.session_state.replay_from = runs[0]
-        return "replay", run_col.selectbox("Recorded run", runs, key="replay_from", format_func=replay_label,
-                                           help="A run recorded with the AI; the first is from the final evaluation")
-    return mode, None
+def recording_options(version: str, seed: int) -> dict[str, str]:
+    """This version's recordings for the seed; a saved run opened from elsewhere is listed too."""
+    opts = dict(recordings_for(version, seed))
+    mine = st.session_state.get("recording")
+    loaded = st.session_state.get("loaded") or {}
+    if mine and mine not in opts and loaded.get("recording") == mine and loaded.get("version") == version \
+            and run_store.run_config(mine)["seed"] == seed:
+        opts[mine] = replay_label(mine)
+    return opts
+
+
+def version_controls(seed_col, version_col, source_col, rec_col) -> tuple[str, str | None, str | None]:
+    """Seed, Version and, for the two LLM versions, Replay or Live and the recording (DESIGN 13.1)."""
+    choices = list(V.VERSIONS)
+    if st.session_state.version not in choices:       # an ablation opened from the Evaluation page
+        choices.append(st.session_state.version)
+    seed_col.number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed", on_change=selection_changed,
+                          help="Picks the scenario: incidents, victims and walk-ins")
+    version = version_col.selectbox("Version", choices, format_func=V.label, key="version",
+                                    on_change=selection_changed,
+                                    help="The four systems the Evaluation page compares. The guard setting "
+                                         "comes from the version.")
+    if not V.uses_llm(version):
+        return version, (None if version == "greedy" else "off"), None
+    if st.session_state.get("source") not in SOURCES:   # Streamlit forgets a widget's value while it is hidden
+        st.session_state.source = SOURCES[0]
+    source = source_col.segmented_control("LLM", SOURCES, key="source", required=True, on_change=selection_changed,
+                                          help="Replay (free): the AI's recorded answers, exactly. "
+                                               "Live (costs credit): new model calls, recorded.")
+    if source == "Live":
+        if not live_available():
+            rec_col.caption("Live needs a pinned model and OPENAI_API_KEY.")
+        else:
+            rec_col.caption("Live: calls the model; costs API credit.")
+        return version, "live", None
+    opts = recording_options(version, int(st.session_state.seed))
+    if not opts:
+        rec_col.caption(f"No recording for this seed; recorded: {V.seeds_text(V.recorded_seeds(version)) or 'none'}")
+        return version, "replay", None
+    if st.session_state.get("recording") not in opts:
+        st.session_state.recording = next(iter(opts))
+    recording = rec_col.selectbox("Recording", list(opts), format_func=opts.get, key="recording",
+                                  on_change=selection_changed, help="The recorded run to replay for this seed")
+    return version, "replay", recording
+
+
+def live_available() -> bool:
+    cfg = load_llm_config()
+    return bool(cfg.get("model") and os.environ.get("OPENAI_API_KEY"))
+
+
+def runnable(version: str, llm_mode: str | None, recording: str | None) -> bool:
+    if llm_mode == "replay":
+        return recording is not None
+    return llm_mode != "live" or live_available()
+
+
+def current_selection() -> tuple[str, str | None, str | None]:
+    """(version, llm mode, recording) as the widgets stand, before they are drawn."""
+    version = st.session_state.version
+    if not V.uses_llm(version):
+        return version, (None if version == "greedy" else "off"), None
+    if st.session_state.get("source", SOURCES[0]) == "Live":
+        return version, "live", None
+    opts = recording_options(version, int(st.session_state.seed))
+    if st.session_state.get("recording") not in opts:
+        st.session_state.recording = next(iter(opts), None)
+    return version, "replay", st.session_state.recording
+
+
+def selection_changed() -> None:
+    """Never show a run other than the one selected: a free choice loads at once, paused at minute 0;
+    a live LLM run waits for Run (it costs credit)."""
+    if live() is None and st.session_state.run_id is None:
+        return                                          # the intro: Run says what it will load
+    version, llm_mode, recording = current_selection()
+    if llm_mode == "live" or (llm_mode == "replay" and recording is None):
+        stop_live()
+        st.session_state.update(run_id=None, playing=False, compare=False, loaded=None)
+        return
+    start_live(version, int(st.session_state.seed), llm_mode, recording, st.session_state.n_incidents, paused=True)
+
+
+def sync_selection(run_id: str) -> None:
+    """A saved run opened from Past runs, a highlight or the Evaluation page: the controls follow it."""
+    cfg = run_store.run_config(run_id)
+    version = V.version_of(cfg)
+    opened_from = st.session_state.get("opened_from", {}).get(run_id)   # set when a highlight or evaluation opened it
+    recording = (opened_from or V.source_of(run_store.RUNS_DIR / run_id)) if V.uses_llm(version) else None
+    st.session_state.update(version=version, seed=cfg["seed"], loaded={"version": version, "recording": recording},
+                            synced=run_id)
+    if V.uses_llm(version):
+        st.session_state.update(source=SOURCES[0], recording=recording)
+    if cfg["sim"]["n_incidents"] in INCIDENT_CHOICES and not cfg.get("spawns"):
+        st.session_state.n_incidents = cfg["sim"]["n_incidents"]
 
 
 def replay_label(path: str) -> str:
-    preset = next((p for p in run_store.replay_presets() if p["path"] == path), None)
-    return preset["label"] if preset else run_label(path)
+    preset = V.presets().get(path)
+    if preset:
+        return preset
+    m = re.match(r"evals/(eval-\d+)/runs/seed(\d+)-agents-r(\d+)$", path)
+    return f"final evaluation, seed {m[2]}, recording {m[3]}" if m else run_label(path)
 
 
-def run_clicked(policy: str, llm_mode: str | None, replay_from: str | None) -> None:
-    if replay_from:
-        st.session_state.seed = run_store.run_config(replay_from)["seed"]
-    start_live(int(st.session_state.seed), policy, llm_mode, replay_from, st.session_state.n_incidents, paused=False)
+def run_clicked(version: str, llm_mode: str | None, recording: str | None) -> None:
+    if recording:
+        st.session_state.seed = run_store.run_config(recording)["seed"]
+    start_live(version, int(st.session_state.seed), llm_mode, recording, st.session_state.n_incidents, paused=False)
 
 
-def restart_clicked(policy: str, llm_mode: str | None) -> None:
+def restart_clicked(version: str, llm_mode: str | None) -> None:
     seed = secrets.randbelow(100_000)
     st.session_state.seed = seed
-    start_live(seed, policy, llm_mode, None, st.session_state.n_incidents, paused=True)
+    start_live(version, seed, llm_mode, None, st.session_state.n_incidents, paused=True)
     st.session_state.notice = ("info", f"New seed {seed}: press ▶ Resume to start.")
 
 
@@ -259,14 +324,31 @@ def clock_buttons(pause_col, step_col) -> None:
                     help="Advance one minute, then stay paused")
 
 
-def settings_popover(policy: str, llm_mode: str | None) -> None:
-    st.selectbox("Incidents per scenario", INCIDENT_CHOICES, key="n_incidents",
+def settings_popover(version: str, llm_mode: str | None) -> None:
+    st.selectbox("Incidents per scenario", INCIDENT_CHOICES, key="n_incidents", on_change=selection_changed,
                  help=f"{EVALUATED_INCIDENTS} is the evaluated setting (DESIGN 3.11). Fewer incidents are easier "
-                      "to follow; one of them is always the surge (6 to 10 victims).")
-    st.button("🎲 Restart with new seed", width="stretch", on_click=restart_clicked, args=(policy, llm_mode),
-              disabled=llm_mode == "replay", help="Picks a random seed and waits at minute 0; press Resume to start")
+                      "to follow; one of them is always the surge (6 to 10 victims). A replay uses its recording's.")
+    st.button("🎲 Restart with new seed", width="stretch", on_click=restart_clicked, args=(version, llm_mode),
+              disabled=llm_mode in ("replay", "live"),
+              help="Picks a random seed and waits at minute 0; press Resume to start")
     past_runs()
     compare_controls()
+
+
+HOW_TO_READ = """**How to read this**
+
+1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
+   carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
+   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its conversation.
+2. **The conversations** (right). Click an incident to read what the agents said to each other about it, in
+   time order: "Dispatch → H1, H2: Can you take the critical patient?" and each hospital's answer with its
+   reason. Grey lines starting with "·" say what happened in the world. **(AI)** after a line means that
+   agent's AI decided it; hover it for the AI's own words. Hover a hospital (H1, H2, H3) for its name.
+3. **The results** (top right): criticals on time, unserved criticals, response time (report to first
+   ambulance), average time to care, victims delivered and allocation conflicts so far. Below them, each kind
+   of unit free now and how busy it has been so far, and each hospital's ER, free doctors and nurses and how
+   much of it has been used so far. The **Evaluation** page compares the four versions over 20 scenarios.
+"""
 
 
 def past_runs() -> None:
@@ -440,9 +522,13 @@ def clock_bar(run: dict, minute: int) -> str:
         else:
             state = "⏩ skipping quiet time" if lr.skipping else "🔴 live"
         where = "live run"
+    loaded = st.session_state.get("loaded") or {}
+    if loaded.get("recording"):
+        where += f" · replaying {replay_label(loaded['recording'])}"
     cfg = run["config"]
     placed = len(cfg.get("spawns") or [])
-    scenario = (f"seed {cfg['seed']} · {POLICY_LABELS.get(cfg['policy'], cfg['policy'])} · "
+    version = loaded.get("version") or V.version_of(cfg)
+    scenario = (f"seed {cfg['seed']} · {V.label(version)} · "
                 f"{cfg['sim']['n_incidents']} incidents" + (f" (+{placed} placed)" if placed else ""))
     pct = round(100 * minute / max(1, horizon - 1), 1)
     return (f"<div class='clock'><span class='min'>Min {minute} / {horizon - 1}</span><span>{state}</span>"
@@ -472,8 +558,9 @@ def main_map(run: dict, t: float) -> None:
 
 def side_panel(key: str, run: dict, minute: int) -> None:
     state = run["timeline"][minute]
-    st.markdown(panels.kpi_cards_html(kpis_at(key, minute, run)) + panels.units_free_line(state)
-                + panels.hospitals_html(state), unsafe_allow_html=True)
+    m = kpis_at(key, minute, run)
+    st.markdown(panels.kpi_cards_html(m) + panels.units_html(state, m) + panels.hospitals_html(state, m),
+                unsafe_allow_html=True)
     if st.session_state.spawn_mode and live() is not None:
         spawn_form()
         return
@@ -494,7 +581,7 @@ def two_maps(run: dict, base: dict, t: float) -> None:
     left, right = st.columns(2, gap="small")
     left.caption("Greedy baseline")
     left.pydeck_chart(map_view.build_deck(base, t, view_state(base, 11.7)), height=MAP_HEIGHT - 28, key="map_base")
-    right.caption(f"{POLICY_LABELS.get(run['config']['policy'], 'agents').capitalize()} · same seed")
+    right.caption(f"{V.label(V.version_of(run['config']))} · same seed")
     right.pydeck_chart(map_view.build_deck(run, t, view_state(run, 11.7)), height=MAP_HEIGHT - 28, key="map_agents")
 
 
@@ -553,6 +640,9 @@ def show_notice() -> None:
 def playback() -> None:
     style.apply()
     init_state()
+    rid = st.session_state.run_id
+    if rid is not None and st.session_state.get("synced") != rid:
+        sync_selection(rid)
     control_bar()
     show_notice()
     if live() is None and st.session_state.run_id is None:
@@ -566,13 +656,24 @@ def playback() -> None:
 
 def intro() -> None:
     """Before a run (DESIGN 13.1): what pressing Run will show, and how to read the page."""
-    featured = st.session_state.get("replay_from")
-    what = (f"It replays <b>{escape(replay_label(featured))}</b> with the AI's recorded answers, exactly as it "
-            "happened." if featured and st.session_state.llm_mode == "replay"
-            else "It runs the chosen seed and policy live, from minute 0.")
-    st.markdown(f"<div class='intro'><h3>Press ▶ Run to start</h3><p>{what} Emergency calls come in across central "
-                f"Boston ({escape(load_area()['name'])}); agents send ambulances and negotiate with three "
-                "hospitals, in about 6 minutes at 1x with quiet time skipped.</p></div>", unsafe_allow_html=True)
+    version, llm_mode, recording = current_selection()
+    seed = int(st.session_state.seed)
+    if llm_mode == "replay" and recording:
+        head = f"Press ▶ Run to load: {escape(replay_label(recording))}"
+        what = "It replays the run with the AI's recorded answers, exactly as it happened, at no cost."
+    elif llm_mode == "replay":
+        head = f"No recording for seed {seed} with {escape(V.label(version))}"
+        what = (f"Recorded seeds: {V.seeds_text(V.recorded_seeds(version)) or 'none'}. Pick one of them, or switch "
+                "the LLM to Live (costs credit).")
+    elif llm_mode == "live":
+        head = f"Press ▶ Run to start a live run: {escape(V.label(version))}, seed {seed}"
+        what = "The AI is called live and its answers are recorded; this costs API credit."
+    else:
+        head = f"Press ▶ Run to start: {escape(V.label(version))}, seed {seed}"
+        what = f"It runs live from minute 0 with {st.session_state.n_incidents} incidents, at no cost."
+    st.markdown(f"<div class='intro'><h3>{head}</h3><p>{what} Emergency calls come in across central "
+                f"Boston ({escape(load_area()['name'])}); ambulances are sent and three hospitals take the patients, "
+                "in about 6 minutes at 1x with quiet time skipped.</p></div>", unsafe_allow_html=True)
     left, right = st.columns([3, 2], gap="large")
     left.markdown(HOW_TO_READ)
     with right:
@@ -606,6 +707,8 @@ def jump_to(h: dict) -> None:
     except FileNotFoundError:
         st.session_state.notice = ("error", "That run's recording is not on this machine.")
         return
+    st.session_state.setdefault("opened_from", {})[built[key]] = \
+        run_store.source_of(h["run"]).relative_to(run_store.RUNS_DIR).as_posix()
     open_run(built[key])
     st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], story=h["incident"], feed="Incidents")
 

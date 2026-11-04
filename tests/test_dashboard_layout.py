@@ -14,27 +14,49 @@ def minute_of(tmp_path, t=6):
 
 # ----- right panel -----
 
-def test_kpi_cards_are_the_four_headline_numbers():
+def test_kpi_cards_are_the_six_headline_numbers_with_one_decimal():
     m = {"critical_on_time_pct": 75.0, "criticals_on_time": 3, "criticals_total": 4, "unserved_criticals": 1,
-         "avg_report_to_care_min": 41.5, "victims_delivered": 9}
+         "avg_report_to_care_min": 41.54, "victims_delivered": 9, "avg_response_time_min": 7.25,
+         "allocation_conflicts": 5}
     cards = panels.kpi_cards(m)
-    assert [c[0] for c in cards] == ["Criticals on time", "Unserved criticals", "Avg to care", "Delivered"]
-    assert cards[0][1:] == ("75.0%", "3 of 4") and cards[2][1] == "41.5 min"
+    assert [c[0] for c in cards] == ["Criticals on time", "Unserved criticals", "Response", "Avg to care",
+                                     "Delivered", "Conflicts"]
+    assert cards[0][1:] == ("75.0%", "3 of 4") and cards[2][1:] == ("7.2 min", "to first ambulance")
+    assert cards[3][1] == "41.5 min" and cards[5][1] == "5"
     assert panels.kpi_cards({**m, "critical_on_time_pct": None, "avg_report_to_care_min": None})[0][1] == "–"
+    assert panels.kpi_cards({k: v for k, v in m.items() if k != "allocation_conflicts"})[5][1] == "–"
 
 
-def test_units_and_hospitals_fit_one_line_each(tmp_path):
-    _, minute = minute_of(tmp_path)
-    line = panels.units_free_line(minute)
-    assert line.startswith("<div class='units-line'>Free now:") and "<b>Paramedic (ALS)</b>" in line and "ⓘ" in line
+def test_units_show_free_now_and_busy_so_far_and_hospitals_their_staff(tmp_path):
+    from sim import metrics
+    data, minute = minute_of(tmp_path)
+    m = metrics.at_minute(data["victims"], data["timeline"], data["events"], 6)
+    status = panels.unit_status(minute, m)
+    assert [u["kind"] for u in status][:2] == ["ALS", "BLS"]
+    assert all(u["busy_pct"] == m["unit_utilization_pct"][u["kind"]] for u in status)
+    html = panels.units_html(minute, m)
+    assert html.count("class='res'") == len(status) and "busy so far" in html and " free</div>" in html
     h = dict(minute["hospitals"][0], er_used=4, er_slots=4, doctors=[{"patients": ["a"], "max": 1},
                                                                     {"patients": [], "max": 2}],
-             patients=[{"walk_in": True}, {"walk_in": False}])
-    row = panels.hospital_line(h)
-    assert (row["level"], row["load_pct"], row["free_doctors"], row["walk_ins"]) == ("full", 100, 1, 1)
-    assert panels.hospitals_html(minute).count("class='hosp'") == len(minute["hospitals"])
+             nurses=[{"patients": ["a", "b"], "max": 3}], patients=[{"walk_in": True}, {"walk_in": False}])
+    row = panels.hospital_line(h, 71.25)
+    assert (row["level"], row["load_pct"], row["free_doctors"], row["doctors"], row["free_nurses"], row["walk_ins"]) \
+        == ("full", 100, 1, 2, 1, 1)
+    rows = panels.hospitals_html(minute, m)
+    assert rows.count("class='hosp'") == len(minute["hospitals"]) and "nurses free" in rows and "used so far" in rows
     both = panels.compare_resources_html(minute, minute)
     assert "<b>Baseline</b> free:" in both and "<b>Agents</b> free:" in both and both.count("ER baseline") == 3
+
+
+def test_units_are_dots_named_on_hover_and_only_the_selected_incidents_units_are_labelled(tmp_path):
+    data, _ = minute_of(tmp_path)
+    view = {"latitude": 0, "longitude": 0, "zoom": 12}
+    layers = {layer.id: layer for layer in map_view.build_deck(data, 6, view).layers}
+    assert layers["units"].type == "ScatterplotLayer" and layers["units"].data
+    assert not layers["unit-badges"].data
+    focus = next(u["incident"] for u in data["timeline"][6]["units"] if u["incident"])
+    layers = {layer.id: layer for layer in map_view.build_deck(data, 6, view, focus=focus).layers}
+    assert layers["unit-badges"].data and all(r["incident"] == focus or r["badge"] for r in layers["unit-badges"].data)
 
 
 def test_event_and_agent_feeds_escape_text(tmp_path):
@@ -111,3 +133,27 @@ def test_overview_numbers_come_from_the_summaries():
     assert list(table["Change"]) == ["", "+30.0 pts", "+15.0 pts", "+1.0 pts"]
     fig = eval_views.headline_bars(head, "light")
     assert list(fig.data[0].x) == [40.0, 86.0] and fig.data[0].marker.color[1] == eval_views.ACCENT["light"]
+
+
+def test_ablation_rows_read_plainly_from_the_sign():
+    assert eval_views.effect(4.1, "the referee") == "+4.1 pts (the referee currently costs points)"
+    assert eval_views.effect(-13.8, "hospital agents", plural=True) == "-13.8 pts (hospital agents add points)"
+    assert eval_views.effect(0.0, "the guard") == "+0.0 pts (no difference)"
+    html = eval_views.removals_html([{"label": "Removing the referee", "mean": 88.75, "change": 4.1,
+                                      "part": "the referee"}])
+    assert html == ("<ul class='removals'><li><b>Removing the referee</b>: +4.1 pts (the referee currently costs "
+                    "points) · 88.8% on time</li></ul>")
+
+
+def test_resource_table_shows_every_version_with_one_decimal():
+    stat = lambda mean, sd=2.04: {"mean": mean, "sd": sd, "n": 20}
+    items = [{"label": "Greedy baseline", "metrics": {"allocation_conflicts": stat(6.5), "als_utilization_pct": stat(85.69)}},
+             {"label": "Agents, rules only", "metrics": {"allocation_conflicts": stat(45.0)}}]
+    table = eval_views.resource_table(items)
+    assert list(table.columns) == ["Greedy baseline", "Agents, rules only"]
+    assert table.loc["Allocation conflicts"].tolist() == ["6.5 (±2.0)", "45.0 (±2.0)"]
+    assert table.loc["Paramedic ambulances (ALS) busy"].tolist() == ["85.7% (±2.0)", "–"]
+    assert len(table) == len(eval_views.RESOURCE_ROWS)
+    head = eval_catalog.resources(CATALOG, lambda e: {"summary": {"metrics": {"greedy": {}, "agents": {}}}}
+                                  if e != "e-gone" else loader(e))
+    assert [h["label"] for h in head] == ["Greedy", "LLM"]

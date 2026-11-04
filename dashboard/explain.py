@@ -15,6 +15,12 @@ GLOSSARY = {
     "Unserved criticals": "Critical victims not at a hospital yet.",
     "Avg to care": "Average minutes from an incident being reported to its victims reaching a hospital.",
     "Delivered": "Victims who have reached a hospital so far.",
+    "Response": "Average minutes from an incident being reported to the first ambulance on scene.",
+    "Conflicts": "Allocation conflicts so far: times a planned unit or bed could not be given as planned and had to "
+                 "be sorted out (a refused action, an ambulance arriving to no free slot, a reservation taken by a "
+                 "walk-in, or a hospital declining an award). Counted the same way for every version.",
+    "Utilization": "Share of the hospital's real capacity (ER slots, doctors and nurses, whichever is scarcest) "
+                   "in use, averaged over the minutes so far.",
     "ALS": "Paramedic ambulance: the only kind that can carry a critical victim (1 critical or 2 others).",
     "BLS": "Basic ambulance: carries up to 2 serious or minor victims, never a critical.",
     "Referee": "The Arbiter: steps in only when the agents cannot agree in time, and its rulings are final.",

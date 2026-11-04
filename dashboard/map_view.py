@@ -2,8 +2,9 @@
 
 Visual language: incidents are circles (red with criticals, amber without, grey when
 everyone is at a hospital); hospitals are a fixed "H" sign with ER use in the label;
-units are labelled badges in colours no other marker uses. Idle units are faded, and
-units that share a spot with a hospital, an incident or each other sit beside it.
+units are dots in colours no other marker uses, named on hover (the basemap's place names stay
+readable); only the selected incident's units carry a text badge, set beside the marker. Idle units
+are faded.
 """
 from __future__ import annotations
 
@@ -283,7 +284,9 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), foc
     shown = [u for u in units if u["id"] not in {v for vs in parked.values() for v in vs}]
     incidents = incident_rows(minute)
     hospitals = hospital_rows(minute, parked)
-    rows = unit_rows(shown, badge_offsets(shown, hospitals, incidents, view.get("zoom", 12.6)))
+    rows = unit_rows(shown, {u["id"]: [0, 0] for u in shown})
+    mine = [u for u in shown if focus and (u["incident"] == focus or any(v.startswith(focus + "-") for v in u["victims"]))]
+    badges = unit_rows(mine, badge_offsets(mine, hospitals, incidents, view.get("zoom", 12.6)))
     paths = [{"path": piece, "color": UNIT_STYLE[u["kind"]]["rgb"] + [210]}
              for u in units if u["path"] for piece in dashed(u["path"])]
     trails = [{**u["trail"], "color": UNIT_STYLE[u["kind"]]["rgb"]} for u in units if u.get("trail")]
@@ -304,7 +307,10 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), foc
                      get_background_color=HOSPITAL_RGB + [255]),
         _label_layer(hospitals, "hospital-names", "name", HOSPITAL_RGB, [0, -24]),
         _label_layer(hospitals, "hospital-er", "er", "er_color", [0, 24]),
-        _badge_layer(rows, "units", 12, [5, 3], get_text="badge", get_color="fg",
+        pdk.Layer("ScatterplotLayer", rows, id="units", get_position=["lon", "lat"], get_fill_color="bg",
+                  get_line_color="fg", stroked=True, line_width_min_pixels=1.5, get_radius=35,
+                  radius_min_pixels=5, radius_max_pixels=8, pickable=True),
+        _badge_layer(badges, "unit-badges", 12, [5, 3], get_text="badge", get_color="fg",
                      get_background_color="bg", get_pixel_offset="offset"),
         *extra,
     ]
@@ -344,10 +350,10 @@ def legend_html() -> str:
 
 def legend_compact_html() -> str:
     """One line under the map (DESIGN 13.1); hover any marker for details."""
-    units = " ".join(_badge("TV" if k == "HV" else s["short"], s["hex"]) for k, s in UNIT_STYLE.items())
+    units = " ".join(f"{_dot(s['rgb'])}{'TV' if k == 'HV' else s['short']}" for k, s in UNIT_STYLE.items())
     return ("<div class='legend'>"
             f"{units} units · {_badge('H', HOSPITAL_HEX, border=HOSPITAL_HEX)} hospital (ER "
             "<b style='color:rgb(46,125,50)'>ok</b>/<b style='color:rgb(230,120,0)'>busy</b>/"
             "<b style='color:rgb(198,40,40)'>full</b>) · "
             f"{_dot(INCIDENT_RED)} criticals {_dot(INCIDENT_AMBER)} others {_dot(INCIDENT_DONE)} done · "
-            "faded = idle · dashed = route ahead · hover for details</div>")
+            "faded = idle · dashed = route ahead · hover any marker for its name</div>")

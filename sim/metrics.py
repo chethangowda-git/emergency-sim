@@ -106,6 +106,26 @@ def rejected_actions(events: list[dict]) -> dict:
     return {"rejected_actions": sum(reasons.values()), "rejected_by_reason": dict(sorted(reasons.items()))}
 
 
+def hospital_utilization(timeline: list[dict]) -> dict[str, float]:
+    """Average utilization of real capacity (DESIGN 3.11) per hospital over the minutes so far."""
+    total: Counter = Counter()
+    for minute in timeline:
+        for h in minute["hospitals"]:
+            total[h["id"]] += h["utilization"]
+    return {hid: round(100 * v / len(timeline), 2) for hid, v in sorted(total.items())}
+
+
+def allocation_conflicts(events: list[dict]) -> dict:
+    """Times a planned unit or bed could not be given as planned and had to be resolved (DESIGN 11.1):
+    rejected actions, ambulances arriving to no slot, reservations broken by walk-ins, and awards a
+    hospital declined when it came to reserve. The same for every policy; escalations are counted apart."""
+    kinds = Counter(e["type"] for e in events)
+    parts = {"rejected_actions": kinds["action_rejected"], "arrivals_no_slot": kinds["arrived_no_slot"],
+             "reservations_broken": kinds["reservation_broken"],
+             "awards_declined": sum(1 for e in events if e["type"] == "message" and e["msg_type"] == "decline")}
+    return {"allocation_conflicts": sum(parts.values()), "allocation_conflicts_by": parts}
+
+
 def negotiation(events: list[dict]) -> dict:
     """DESIGN 11.1 negotiation group, from the agent messages and decisions in the event stream."""
     msgs = [e for e in events if e["type"] == "message"]
@@ -143,7 +163,9 @@ def compute(victims: list[dict], timeline: list[dict], events: list[dict]) -> di
         "avg_response_time_min": round(sum(responses.values()) / len(responses), 2) if responses else None,
         "response_time_min": responses,
         "unit_utilization_pct": unit_utilization(timeline),
+        "hospital_utilization_pct": hospital_utilization(timeline),
         **rejected_actions(events),
+        **allocation_conflicts(events),
         "victims_total": len(victims),
         "victims_delivered": sum(1 for v in victims if v["delivered_at"] is not None),
         "deadlines_missed": kinds["deadline_missed"],
