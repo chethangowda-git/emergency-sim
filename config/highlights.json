@@ -1,0 +1,117 @@
+{
+ "note": "Written by python -m tools.highlights from recorded runs; no API calls.",
+ "highlights": [
+  {
+   "run": {
+    "kind": "eval",
+    "eval": "eval-012",
+    "seed": 2,
+    "policy": "agents",
+    "repeat": 1
+   },
+   "minute": 69,
+   "incident": "I06",
+   "title": "Where should I06's critical victim go?",
+   "score": 53,
+   "why": {
+    "rounds": 3,
+    "AI-decided offers": 9,
+    "counters": 6,
+    "guard blocks": 0,
+    "escalations": 1,
+    "AI differs from rule": 7
+   },
+   "instead": "With the rule here (Riverside Medical would accept whoever fits now): I06's critical victim would end the same (at a hospital at min 122, late). Criticals on time in the whole run: unchanged at 5/16 (an estimate).",
+   "label": "Final eval \u00b7 seed 2, repeat 1, no guard"
+  },
+  {
+   "run": {
+    "kind": "eval",
+    "eval": "eval-012",
+    "seed": 13,
+    "policy": "agents",
+    "repeat": 1
+   },
+   "minute": 210,
+   "incident": "I11",
+   "title": "Where should I11's serious and minor victims go?",
+   "score": 45,
+   "why": {
+    "rounds": 3,
+    "AI-decided offers": 9,
+    "counters": 6,
+    "guard blocks": 0,
+    "escalations": 1,
+    "AI differs from rule": 10
+   },
+   "instead": "With the rule here (South End General would accept whoever fits now): I11's serious victim would end the same (at a hospital at min 239, late); I11's minor victim would end the same (not at a hospital by the end). Criticals on time in the whole run: unchanged at 7/7 (an estimate).",
+   "label": "Final eval \u00b7 seed 13, repeat 1, no guard"
+  },
+  {
+   "run": {
+    "kind": "eval",
+    "eval": "eval-011",
+    "seed": 9,
+    "policy": "agents",
+    "repeat": 1
+   },
+   "minute": 253,
+   "incident": "I11",
+   "title": "Where should I11's minor victim go?",
+   "score": 33,
+   "why": {
+    "rounds": 3,
+    "AI-decided offers": 3,
+    "counters": 6,
+    "guard blocks": 3,
+    "escalations": 0,
+    "AI differs from rule": 5
+   },
+   "instead": "With the rule here (South End General would accept whoever fits now): I11's minor victim would end the same (not at a hospital by the end). Criticals on time in the whole run: unchanged at 7/11 (an estimate).",
+   "label": "Final eval \u00b7 seed 9, repeat 1"
+  },
+  {
+   "run": {
+    "kind": "eval",
+    "eval": "eval-011",
+    "seed": 5,
+    "policy": "agents",
+    "repeat": 2
+   },
+   "minute": 160,
+   "incident": "I04",
+   "title": "Where should I04's minor victim go?",
+   "score": 33,
+   "why": {
+    "rounds": 3,
+    "AI-decided offers": 3,
+    "counters": 6,
+    "guard blocks": 3,
+    "escalations": 0,
+    "AI differs from rule": 5
+   },
+   "instead": "With the rule here (South End General would accept whoever fits now): I04's minor victim would end the same (at a hospital at min 255, on time). Criticals on time in the whole run: unchanged at 11/12 (an estimate).",
+   "label": "Final eval \u00b7 seed 5, repeat 2"
+  },
+  {
+   "run": {
+    "kind": "saved",
+    "path": "demo/demo-seed376"
+   },
+   "minute": 136,
+   "incident": "I05",
+   "title": "Where should I05's serious and minor victims go?",
+   "score": 27,
+   "why": {
+    "rounds": 3,
+    "AI-decided offers": 3,
+    "counters": 6,
+    "guard blocks": 3,
+    "escalations": 0,
+    "AI differs from rule": 3
+   },
+   "instead": "With the rule here (South End General would accept whoever fits now): I05's serious victim would be at a hospital at min 215, on time instead of at a hospital at min 207, on time; I05's minor victim would be at a hospital at min 270, on time instead of at a hospital at min 354, late. Criticals on time in the whole run: unchanged at 8/8 (an estimate).",
+   "label": "Demo"
+  }
+ ]
+}

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from dashboard import agent_views, explain, explain_agents, panels
+from dashboard import agent_views, explain, explain_agents, panels, timeline
 
 FEEDS = ("Incidents", "Negotiations", "Decisions", "Hospitals", "Log")
 BASELINE_FEEDS = ("Incidents", "Hospitals", "Log")
@@ -111,32 +111,51 @@ def incidents_tab(key: str, run: dict, minute: int, incident: str | None, agent:
         st.markdown(explain.incident_card_html(c, focus == c["id"]), unsafe_allow_html=True)
 
 
-def pick_thread(thread_id: str) -> None:
-    st.session_state.neg_pick = thread_id
+@st.cache_data(max_entries=1200, show_spinner=False)
+def steps_at(key: str, minute: int, incident: str | None, _run: dict) -> list[dict]:
+    ctx = timeline.Context(_run, minute, thread_index(key, len(_run["events"]), _run["events"]),
+                           calls_of(key, len(_run["events"]), _run))
+    return timeline.incident_steps(ctx, incident)
+
+
+@st.cache_data(max_entries=600, show_spinner=False)
+def incident_list_at(key: str, minute: int, _run: dict) -> list[dict]:
+    return timeline.incident_list(_run, minute, lambda iid: steps_at(key, minute, iid, _run))
+
+
+def pick_incident(iid: str | None) -> None:
+    st.session_state.update(neg_incident=iid or "requests", focus=iid)
 
 
 def negotiations_tab(key: str, run: dict, minute: int, incident: str | None, agent: str | None, height: int) -> None:
-    """List + detail: threads on the left (title, status, hospital chips), the chosen one's conversation on
-    the right. The newest active thread is shown until another is picked."""
-    views = [v for v in threads_at(key, minute, run) if incident in (None, v["incident"])
-             and (agent is None or agent in v["agents"])]
-    if not views:
+    """Left: one entry per incident (active first) and 'Hospital requests'. Right: the chosen one's timeline."""
+    entries = incident_list_at(key, minute, run)
+    if not entries:
         with st.container(height=height, border=True, key="feedbox"):
-            st.caption("No negotiation yet at this minute.")
+            st.caption("No incident reported yet.")
         return
-    ids = [v["id"] for v in views]
-    chosen = st.session_state.get("neg_pick")
-    chosen = chosen if chosen in ids else explain_agents.default_thread(views)
-    left, right = st.columns([2, 3], gap="small")
+    ids = [e["id"] or "requests" for e in entries]
+    chosen = incident or st.session_state.get("neg_incident") or st.session_state.get("focus")
+    if chosen not in ids:
+        active = [e for e in entries if e["active"]]
+        chosen = (active or entries)[0]["id"] or "requests"
+    left, right = st.columns([2, 5], gap="small")
     with left.container(height=height, border=True, key="neglist"):
-        for v in views[:60]:
-            mark = "▸ " if v["id"] == chosen else ""
-            st.button(f"{mark}{v['title']}", key=f"th_{v['id']}", type="tertiary", on_click=pick_thread,
-                      args=(v["id"],), help=f"Show this conversation ({v['id']})")
-            st.markdown(explain_agents.thread_entry_html(v), unsafe_allow_html=True)
+        for e in entries:
+            eid = e["id"] or "requests"
+            st.button(f"{'▸ ' if eid == chosen else ''}{e['name']}", key=f"inc_{eid}", type="tertiary",
+                      on_click=pick_incident, args=(e["id"],), help="Show this incident's timeline")
+            status = "active" if e["active"] else "finished" if e["id"] else "not tied to one incident"
+            st.markdown(f"<div class='tentry'>{status} · {e['steps']} steps</div>", unsafe_allow_html=True)
     with right.container(height=height, border=True, key="negdetail"):
-        st.markdown(explain_agents.thread_detail_html(next(v for v in views if v["id"] == chosen)),
-                    unsafe_allow_html=True)
+        steps = steps_at(key, minute, None if chosen == "requests" else chosen, run)
+        if not steps:
+            st.caption("Nothing yet.")
+        for i, s in enumerate(steps):
+            st.markdown(timeline.step_html(s), unsafe_allow_html=True)
+            if s["messages"]:
+                with st.expander(f"Messages ({len(s['messages'])})", key=f"msg_{chosen}_{i}_{s['t']}"):
+                    st.markdown(explain_agents.bubbles_html(s["messages"]), unsafe_allow_html=True)
 
 
 def decisions_tab(key: str, run: dict, minute: int, incident: str | None, agent: str | None) -> None:

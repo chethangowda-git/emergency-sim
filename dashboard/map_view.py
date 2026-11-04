@@ -271,9 +271,9 @@ def focus_layers(units: list[dict], incidents: list[dict], focus: str | None) ->
     routes = [{"path": [[p[1], p[0]] for p in u["path"]]} for u in mine if u["path"]]
     return [pdk.Layer("PathLayer", routes, id="focus-routes", get_path="path", get_color=[255, 196, 0, 200],
                       width_min_pixels=7),
-            pdk.Layer("ScatterplotLayer", spots, id="focus", get_position=["lon", "lat"], get_fill_color=[255, 196, 0, 40],
-                      get_line_color=[255, 196, 0, 255], stroked=True, line_width_min_pixels=3, get_radius=90,
-                      radius_min_pixels=16, radius_max_pixels=30)]
+            pdk.Layer("ScatterplotLayer", spots, id="focus", get_position=["lon", "lat"], get_fill_color=[255, 196, 0, 0],
+                      get_line_color=[255, 196, 0, 255], stroked=True, filled=False, line_width_min_pixels=4,
+                      get_radius=120, radius_min_pixels=26, radius_max_pixels=34)]
 
 
 def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), focus: str | None = None) -> pdk.Deck:
@@ -287,8 +287,9 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), foc
     paths = [{"path": piece, "color": UNIT_STYLE[u["kind"]]["rgb"] + [210]}
              for u in units if u["path"] for piece in dashed(u["path"])]
     trails = [{**u["trail"], "color": UNIT_STYLE[u["kind"]]["rgb"]} for u in units if u.get("trail")]
+    focus_route, focus_ring = (focus_layers(units, incidents, focus) or [None, None])
     layers = [
-        *focus_layers(units, incidents, focus),
+        *([focus_route] if focus_route else []),
         pdk.Layer("PathLayer", paths, id="routes", get_path="path", get_color="color",
                   width_min_pixels=3, width_max_pixels=4),
         pdk.Layer("TripsLayer", trails, id="trails", get_path="path", get_timestamps="times", get_color="color",
@@ -298,6 +299,7 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), foc
                   pickable=True, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=2),
         pdk.Layer("TextLayer", incidents, id="incident-counts", get_position=["lon", "lat"], get_text="count",
                   get_color=[255, 255, 255], get_size=13),
+        *([focus_ring] if focus_ring else []),     # the ring sits on top of the incident circle
         _badge_layer(hospitals, "hospitals", 16, [6, 3], get_text="sign", get_color=[255, 255, 255],
                      get_background_color=HOSPITAL_RGB + [255]),
         _label_layer(hospitals, "hospital-names", "name", HOSPITAL_RGB, [0, -24]),

@@ -1,0 +1,152 @@
+{
+ "run_id": "seed376-agents-001",
+ "seed": 376,
+ "policy": "agents",
+ "area": "Central Boston, MA",
+ "llm": {
+  "mode": "live",
+  "model": "gpt-4o-mini-2024-07-18",
+  "replay_from": null,
+  "guard": true
+ },
+ "sim": {
+  "horizon": 360,
+  "incident_window": 120,
+  "emergency_factor": 0.85,
+  "deadline": {
+   "critical": 60,
+   "serious": 120,
+   "minor": 240
+  },
+  "treatment": {
+   "critical": 90,
+   "serious": 60,
+   "minor": 30
+  },
+  "stabilize_after": 20,
+  "transfer_deadline": 120,
+  "release_delay": 30,
+  "clearance_minutes": 10,
+  "on_scene_minutes": 5,
+  "handover_minutes": 5,
+  "hold_minutes": 15,
+  "transfer_prep_minutes": 5,
+  "n_incidents": 6,
+  "normal_victims": [
+   1,
+   4
+  ],
+  "surge_victims": [
+   6,
+   10
+  ],
+  "surge_window": [
+   30,
+   90
+  ],
+  "incident_type_weights": {
+   "traffic_accident": 0.35,
+   "medical_emergency": 0.35,
+   "building_fire": 0.2,
+   "structural_collapse": 0.1
+  },
+  "severity_mix": {
+   "critical": 0.25,
+   "serious": 0.35,
+   "minor": 0.4
+  },
+  "walk_in_mean_gap": 40,
+  "walk_in_mix": {
+   "critical": 0.2,
+   "serious": 0.4,
+   "minor": 0.4
+  },
+  "fleet": {
+   "ALS": 3,
+   "BLS": 3,
+   "FIRE": 2,
+   "RESCUE": 1
+  },
+  "doctor_max_patients": 2,
+  "nurse_max_patients": 3,
+  "hospitals": [
+   {
+    "id": "H1",
+    "name": "Central Trauma Center",
+    "capabilities": [
+     "trauma",
+     "burns",
+     "general"
+    ],
+    "er_slots": 6,
+    "ward_beds": 10,
+    "doctor_specialties": [
+     "trauma",
+     "trauma",
+     "burns"
+    ],
+    "nurses": 3,
+    "vehicles": 1
+   },
+   {
+    "id": "H2",
+    "name": "Northside General",
+    "capabilities": [
+     "trauma",
+     "general"
+    ],
+    "er_slots": 4,
+    "ward_beds": 6,
+    "doctor_specialties": [
+     "trauma",
+     "trauma"
+    ],
+    "nurses": 2,
+    "vehicles": 1
+   },
+   {
+    "id": "H3",
+    "name": "Eastside Community",
+    "capabilities": [
+     "burns",
+     "general"
+    ],
+    "er_slots": 4,
+    "ward_beds": 6,
+    "doctor_specialties": [
+     "burns",
+     "burns"
+    ],
+    "nurses": 2,
+    "vehicles": 1
+   }
+  ]
+ },
+ "spawns": [
+  {
+   "t": 70,
+   "type": "building_fire",
+   "severities": [
+    "minor",
+    "minor",
+    "minor",
+    "critical"
+   ],
+   "description": "kitchen fire in a restaurant",
+   "surge": false,
+   "node": "61344227"
+  },
+  {
+   "t": 72,
+   "type": "traffic_accident",
+   "severities": [
+    "minor",
+    "critical",
+    "minor"
+   ],
+   "description": "delivery van hit a parked car",
+   "surge": false,
+   "node": "5359748379"
+  }
+ ]
+}

@@ -127,9 +127,54 @@ def baseline_for(run_id: str, runs_dir: Path = RUNS_DIR) -> str | None:
     return None
 
 
-def featured_replay(runs_dir: Path = RUNS_DIR) -> str | None:
-    """The recorded final-evaluation run the Simulation page offers first (config/evaluations.json):
-    a path under runs/ such as evals/eval-011/runs/seed18-agents-r1, if it is on this machine."""
+def replay_presets(runs_dir: Path = RUNS_DIR) -> list[dict]:
+    """Recorded runs the Simulation page offers first (config/evaluations.json): the demo, then a final-evaluation
+    run; paths under runs/ such as demo/demo-seed376, only those on this machine."""
     catalog = ROOT / "config" / "evaluations.json"
-    path = json.loads(catalog.read_text()).get("default_replay") if catalog.exists() else None
-    return path if path and (runs_dir / path / "llm_calls.jsonl").exists() else None
+    presets = json.loads(catalog.read_text()).get("replay_presets", []) if catalog.exists() else []
+    return [p for p in presets if (runs_dir / p["path"] / "llm_calls.jsonl").exists()]
+
+
+def featured_replay(runs_dir: Path = RUNS_DIR) -> str | None:
+    presets = replay_presets(runs_dir)
+    return presets[0]["path"] if presets else None
+
+
+def highlights() -> list[dict]:
+    path = ROOT / "config" / "highlights.json"
+    return json.loads(path.read_text()).get("highlights", []) if path.exists() else []
+
+
+def materialize(ref: dict, roads=None) -> str:
+    """A full run folder for a highlight's run: an evaluated run is rebuilt, a saved recording replayed."""
+    from evaluation.runner import rebuild_run
+
+    if (done := rebuilt(ref)) is not None:
+        return done
+    if ref["kind"] == "eval":
+        return rebuild_run(ref["eval"], ref["seed"], ref["policy"], ref["repeat"], roads=roads).name
+    cfg = run_config(ref["path"])
+    return run_and_save(cfg["seed"], cfg["policy"], roads=roads, llm_mode="replay", replay_from=ref["path"])
+
+
+def source_of(ref: dict, runs_dir: Path = RUNS_DIR) -> Path:
+    if ref["kind"] == "eval":
+        from evaluation.runner import EVALS_DIR, run_id_for
+        return EVALS_DIR / ref["eval"] / "runs" / run_id_for(ref["seed"], ref["policy"], ref["repeat"])
+    return runs_dir / ref["path"]
+
+
+def rebuilt(ref: dict, runs_dir: Path = RUNS_DIR) -> str | None:
+    """An earlier full rebuild of the same recording (same seed, policy and replayed calls), if any."""
+    src = source_of(ref, runs_dir)
+    if not (src / "config.json").exists():
+        return None
+    want = json.loads((src / "config.json").read_text())
+    for run_id in list_runs(runs_dir, policies=(want["policy"],)):
+        cfg = run_config(run_id, runs_dir)
+        same = cfg.get("seed") == want["seed"] and cfg.get("spawns", []) == want.get("spawns", [])
+        if same and (runs_dir / run_id / "llm_calls.jsonl").exists() and \
+                (runs_dir / run_id / "metrics.json").read_bytes() == (src / "metrics.json").read_bytes() and \
+                (cfg.get("llm") or {}).get("mode") == "replay":
+            return run_id
+    return None

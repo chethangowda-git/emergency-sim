@@ -1,0 +1,73 @@
+{
+ "criticals_total": 8,
+ "criticals_on_time": 8,
+ "critical_on_time_pct": 100.0,
+ "unserved_criticals": 0,
+ "avg_report_to_care_min": 87.08,
+ "er_peak_pct": {
+  "H1": 166.67,
+  "H2": 125.0,
+  "H3": 150.0
+ },
+ "er_load_balance_pct": 41.67,
+ "idle_minutes": {
+  "H1": 26,
+  "H2": 20,
+  "H3": 24
+ },
+ "overload_minutes": {
+  "H1": 225,
+  "H2": 206,
+  "H3": 248
+ },
+ "avg_response_time_min": 14.14,
+ "response_time_min": {
+  "I01": 2,
+  "I02": 6,
+  "I03": 6,
+  "I04": 33,
+  "I05": 44,
+  "S01": 2,
+  "S02": 6
+ },
+ "unit_utilization_pct": {
+  "ALS": 79.63,
+  "BLS": 83.43,
+  "FIRE": 8.19,
+  "HV": 23.52,
+  "RESCUE": 0.0,
+  "overall": 56.17
+ },
+ "rejected_actions": 22,
+ "rejected_by_reason": {
+  "er_full": 20,
+  "no_reservation": 2
+ },
+ "victims_total": 29,
+ "victims_delivered": 26,
+ "deadlines_missed": 7,
+ "walk_ins": 31,
+ "reservations_broken": 4,
+ "wasted_hold_minutes": 0,
+ "holds_placed": 0,
+ "holds_expired": 0,
+ "transfers": 0,
+ "reroutes": 0,
+ "redirects": 0,
+ "early_releases": 34,
+ "staff_loans": 1,
+ "vehicle_loans": 2,
+ "negotiation": {
+  "threads": 144,
+  "rounds": 251,
+  "counters": 262,
+  "deals_without_arbiter": 40,
+  "escalations": 17,
+  "arbiter_decisions": 45,
+  "decisions_by": {
+   "rule": 88.23,
+   "llm": 11.77,
+   "fallback": 0.0
+  }
+ }
+}

@@ -18,7 +18,8 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from dashboard import eval_catalog, evaluation_page, explain, feed, map_view, panels, run_store, style  # noqa: E402
+from dashboard import evaluation_page, explain, feed, map_view, panels, run_store, style  # noqa: E402
+from dashboard import wording as W  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
 from coordination.llm import load_llm_config  # noqa: E402
@@ -159,8 +160,8 @@ def baseline_id() -> str | None:
 
 def control_bar() -> None:
     replaying = st.session_state.get("policy", "greedy") != "greedy" and st.session_state.llm_mode == "replay"
-    widths = ([0.55, 0.95, 0.85, 1.55, 0.6, 0.8, 0.65, 0.55, 1.1, 0.7, 0.42, 0.42] if replaying
-              else [0.7, 1.15, 1.0, 0.75, 0.95, 0.8, 0.65, 1.25, 0.85, 0.42, 0.42])
+    widths = ([0.5, 0.9, 0.8, 1.45, 0.55, 0.8, 0.65, 0.5, 1.0, 0.4, 0.42, 0.42, 0.42] if replaying
+              else [0.65, 1.1, 0.95, 0.75, 0.9, 0.75, 0.6, 1.15, 0.45, 0.42, 0.42, 0.42])
     c = st.columns(widths, vertical_alignment="bottom")
     if not replaying:
         c.insert(3, st.empty())   # the recorded-run picker only takes room while replaying
@@ -180,13 +181,15 @@ def control_bar() -> None:
                 help="While no unit is moving and no incident is open, fast-forward; "
                      "back to the chosen speed when something happens")
     lr = live()
-    c[9].button("🚨 Spawn", width="stretch", on_click=begin_spawn,
+    c[9].button("🚨", width="stretch", on_click=begin_spawn,
                 disabled=lr is None or st.session_state.spawn_mode or lr.view() is None,
                 help="Place an incident: pauses, then click a street spot on the map")
     with c[10].popover("⚙", help="More settings: incidents per scenario, new seed, past runs, compare"):
         settings_popover(policy, llm_mode)
     with c[11].popover("❓", help="How to read this page"):
         st.markdown(HOW_TO_READ)
+    with c[12].popover("⭐", help="Negotiation highlights: the moments with the most real negotiation"):
+        highlights_list("pop")
 
 
 HOW_TO_READ = """**How to read this**
@@ -217,8 +220,7 @@ def llm_controls(mode_col, run_col, policy: str) -> tuple[str | None, str | None
             run_col.caption("Live needs a pinned model and OPENAI_API_KEY; using rules only.")
             return "off", None
     if mode == "replay":
-        featured = run_store.featured_replay()
-        runs = ([featured] if featured else []) + run_store.replayable_runs(policy)
+        runs = [p["path"] for p in run_store.replay_presets()] + run_store.replayable_runs(policy)
         if not runs:
             run_col.caption("No recorded runs to replay yet.")
             return "replay", None
@@ -230,9 +232,8 @@ def llm_controls(mode_col, run_col, policy: str) -> tuple[str | None, str | None
 
 
 def replay_label(path: str) -> str:
-    if path == run_store.featured_replay():
-        return eval_catalog.load_catalog().get("default_replay_label", path)
-    return run_label(path)
+    preset = next((p for p in run_store.replay_presets() if p["path"] == path), None)
+    return preset["label"] if preset else run_label(path)
 
 
 def run_clicked(policy: str, llm_mode: str | None, replay_from: str | None) -> None:
@@ -565,15 +566,49 @@ def playback() -> None:
 
 def intro() -> None:
     """Before a run (DESIGN 13.1): what pressing Run will show, and how to read the page."""
-    featured = run_store.featured_replay()
-    what = (f"It replays a recorded run from the final evaluation: "
-            f"<b>{escape(eval_catalog.load_catalog().get('default_replay_label', featured))}</b>, with the "
-            "AI's recorded answers, exactly as it happened." if featured and st.session_state.llm_mode == "replay"
+    featured = st.session_state.get("replay_from")
+    what = (f"It replays <b>{escape(replay_label(featured))}</b> with the AI's recorded answers, exactly as it "
+            "happened." if featured and st.session_state.llm_mode == "replay"
             else "It runs the chosen seed and policy live, from minute 0.")
     st.markdown(f"<div class='intro'><h3>Press ▶ Run to start</h3><p>{what} Emergency calls come in across central "
                 f"Boston ({escape(load_area()['name'])}); agents send ambulances and negotiate with three "
                 "hospitals, in about 6 minutes at 1x with quiet time skipped.</p></div>", unsafe_allow_html=True)
-    st.markdown(HOW_TO_READ)
+    left, right = st.columns([3, 2], gap="large")
+    left.markdown(HOW_TO_READ)
+    with right:
+        st.markdown("**⭐ Negotiation highlights**: the moments in the recorded runs with the most real negotiation")
+        highlights_list("intro")
+
+
+def highlights_list(where: str) -> None:
+    """The top negotiation moments; the popover also says what the rule would have changed."""
+    items = run_store.highlights()
+    if not items:
+        st.caption("No highlights yet: run `python -m tools.highlights`.")
+    for k, h in enumerate(items):
+        why = ", ".join(f"{v} {name}" for name, v in h["why"].items() if v)
+        text, go = st.columns([3, 2], vertical_alignment="center")
+        extra = f"<div class='why'>{escape(h['instead'])}</div>" if where == "pop" else ""
+        text.markdown(f"<div class='hl' title='{escape(why, quote=True)}'><b>{escape(h['title'])}</b><div class='agent-d'>"
+                      f"{escape(h['label'])} · {escape(W.minute_tag(h['minute']))}</div>{extra}</div>",
+                      unsafe_allow_html=True)
+        go.button("Jump to this moment", key=f"hl_{where}_{k}", on_click=jump_to, args=(h,),
+                  help="Opens that run, paused at this minute, with the incident selected in Negotiations")
+
+
+def jump_to(h: dict) -> None:
+    """Open a highlight's run at its minute with its incident selected (the run is rebuilt once per session)."""
+    built = st.session_state.setdefault("built_runs", {})
+    key = repr(sorted(h["run"].items()))
+    try:
+        if key not in built or not (run_store.RUNS_DIR / built[key]).exists():
+            built[key] = run_store.materialize(h["run"], roads=roads())
+    except FileNotFoundError:
+        st.session_state.notice = ("error", "That run's recording is not on this machine.")
+        return
+    open_run(built[key])
+    st.session_state.update(play_t=float(h["minute"]), focus=h["incident"], feed="Negotiations",
+                            neg_incident=h["incident"], f_incident="All", f_agent="All")
 
 
 def evaluation() -> None:

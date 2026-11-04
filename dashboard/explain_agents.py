@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from html import escape
 
 from coordination.choices import rule_default, rule_ranking_of
+from dashboard import wording as W
 from dashboard.agent_views import outcome
 from dashboard.explain import UNIT_SHORT, agent_name, badge, plural
 
@@ -139,14 +140,14 @@ def bubbles_of(ms: list[dict], minute: int, severity: dict[str, str]) -> list[di
         key = (m["t"], m["sender"], m["round"], kind, tuple(m.get("victim_ids") or []))
         same = next((b for b in out[-8:] if b["key"] == key), None)
         if same is None:
-            same = {"key": key, "t": m["t"], "round": m["round"], "who": agent_name(m["sender"]), "to": [],
-                    "text": sentence(m, severity), "reason": m.get("reason") or "", "by": m["decided_by"],
+            same = {"key": key, "t": m["t"], "round": m["round"], "who": W.place(m["sender"]), "to": [],
+                    "text": W.message_sentence(m, severity), "reason": m.get("reason") or "", "by": m["decided_by"],
                     "heads_up": False, "ids": list(m.get("victim_ids") or []), "new": m["t"] >= minute - 1}
             out.append(same)
         if m["msg_type"] == "pre_alert":
             same["heads_up"] = True
         else:
-            same["text"] = sentence(m, severity)
+            same["text"] = W.message_sentence(m, severity)
         if m["recipient"] not in same["to"]:
             same["to"].append(m["recipient"])
     return out
@@ -249,21 +250,25 @@ def thread_entry_html(v: dict) -> str:
 
 
 def thread_detail_html(v: dict) -> str:
-    out = [f"<div class='tdetail' title='{v['id']}'><div><b>{escape(v['title'])}</b></div>"
-           f"<div>{verdict_html(v)} <span class='agent-d'>{escape(v['outcome'])} · {plural(v['rounds'], 'round')}</span></div>"
-           f"<div class='chips'>{chips_html(v)}</div>"]
-    last_round = None
-    for b in v["bubbles"]:
+    return (f"<div class='tdetail' title='{v['id']}'><div><b>{escape(v['title'])}</b></div>"
+            f"<div>{verdict_html(v)} <span class='agent-d'>{escape(v['outcome'])} · {plural(v['rounds'], 'round')}</span></div>"
+            f"<div class='chips'>{chips_html(v)}</div>{bubbles_html(v['bubbles'])}</div>")
+
+
+def bubbles_html(bubbles: list[dict]) -> str:
+    """The messages, one bubble each, rounds marked, reasons as 'because' or the AI's words."""
+    out, last_round = [], None
+    for b in bubbles:
         if b["round"] != last_round:
             out.append(f"<div class='round'>round {b['round']}</div>")
             last_round = b["round"]
-        to = ", ".join(r if r.startswith("H") else agent_name(r) for r in b["to"])
+        to = ", ".join(W.place(r) for r in b["to"])
         text = ("Heads-up and request: " + b["text"][0].lower() + b["text"][1:]) if b["heads_up"] else b["text"]
-        reason = f"<div class='why'>{'AI: ' if b['by'] == 'llm' else ''}{escape(b['reason'])}</div>" if b["reason"] else ""
+        reason = f"<div class='why'>{escape(W.because(b['reason'], b['by']))}</div>" if b["reason"] else ""
         out.append(f"<div class='bubble{' new' if b['new'] else ''}' title='{escape(', '.join(b['ids']), quote=True)}'>"
                    f"<span class='ev-t'>{minute_tag(b['t'])}</span> <b>{escape(b['who'])}</b> → {escape(to)}: "
                    f"{escape(text)}{reason}</div>")
-    return "".join(out) + "</div>"
+    return "".join(out)
 
 
 # ----- decisions -----
@@ -309,10 +314,10 @@ def saw_decided(e: dict, incidents: dict[str, dict], call: dict | None,
     if k == "assess":
         inc = incidents.get(e.get("incident"), {})
         flags = f" (flags: {', '.join(e['flags'])})" if e.get("flags") else ""
-        return f"{e.get('incident')} reported: “{inc.get('description', '')}”", f"asked for {units_text(e['units_needed'])}{flags}"
+        return f"{e.get('incident')} reported: “{inc.get('description', '')}”", f"asked for {W.units_text(e['units_needed'])}{flags}"
     if k == "plan_units":
-        sent = ", ".join(f"{a['unit']} → {a['incident']} ({a['eta']} min)" for a in e.get("assignments", []))
-        short = "; ".join(f"{s['incident']}: {plan_text(s['chosen'])}" for s in e.get("shortfalls", []))
+        sent = ", ".join(f"{W.unit_name(a['unit'])} to {a['incident']} ({a['eta']} min away)" for a in e.get("assignments", []))
+        short = "; ".join(f"{s['incident']}: {W.plan_text(s['chosen'])}" for s in e.get("shortfalls", []))
         return (f"{plural(len(e.get('ranking', [])), 'incident')} waiting for units, order {', '.join(e.get('ranking', []))}",
                 (f"sent {sent}" if sent else "no unit free") + (f"; short: {short}" if short else ""))
     if k == "admission_offer":
@@ -326,19 +331,24 @@ def saw_decided(e: dict, incidents: dict[str, dict], call: dict | None,
         return f"a request to take {who}", now + then + (f" ({OPTION_TEXT[chosen]})" if chosen in OPTION_TEXT and not later
                                                          else "")
     if k == "award":
-        awards = "; ".join(f"{a['hospital']} takes {victims_phrase(a['victims'], severity or {})} (arrives "
+        awards = "; ".join(f"{W.place(a['hospital'])} takes {victims_phrase(a['victims'], severity or {})} (arrives "
                            f"{minute_tag(a['arrival'])})" for a in e.get("awards", []))
         esc = f"; escalate {victims_phrase(e['escalate'], severity or {})} to the referee" if e.get("escalate") else ""
         return "the hospitals' offers", (awards or "no award yet") + esc
     if k == "resolve":
         loss = " (a loss: it misses the deadline)" if e.get("loss") else ""
         return (f"an escalation for {victims_phrase([e.get('victim')], severity or {})}",
-                f"{ARBITER_OPTIONS.get(e.get('option'), 'option ' + str(e.get('option')))} at {e.get('hospital')}{loss}")
+                f"option {e.get('option')} of 7, {W.ARBITER_OPTIONS.get(e.get('option'), '')}, at "
+                f"{W.place(e['hospital']) if e.get('hospital') else 'no hospital'}{loss}")
     if k == "transfer_response":
-        return f"a request to take {e.get('victim')}", "accept" if e.get("accept") else "decline"
+        return f"a request to take {victims_phrase([e.get('victim')], severity or {})}", "yes" if e.get("accept") else "no"
     if k == "retry":
-        return f"no hospital took {', '.join(e.get('victims', []))}", "try again in 5 minutes"
-    return k.replace("_", " "), e.get("reason", "")
+        return f"no hospital took {victims_phrase(e.get('victims', []), severity or {})}", "try again in 5 minutes"
+    if k == "release":
+        return f"no free room at {W.place(e.get('hospital', ''))} for a waiting critical victim", W.reason_phrase(e["reason"])
+    if k == "transfer":
+        return "a stable patient and a crowded emergency room", W.reason_phrase(e["reason"])
+    return W.DECISIONS.get(k, "a decision"), W.reason_phrase(e.get("reason", ""))
 
 
 def decision_cards(events: list[dict], minute: int, incidents: dict[str, dict], calls: dict[int, dict],
@@ -348,7 +358,7 @@ def decision_cards(events: list[dict], minute: int, incidents: dict[str, dict], 
         if e["t"] > minute:
             break
         if e["type"] == "guard":
-            cards.append(guard_card(e))
+            cards.append(guard_card(e, severity))
         elif e["type"] == "agent_decision":
             call = calls.get(e["seq"])
             other, differs = rule_choice(e, call)
@@ -369,19 +379,21 @@ def why_of(e: dict) -> str:
     return e["reason"]
 
 
-def guard_card(e: dict) -> dict:
+def guard_card(e: dict, severity: dict[str, str] | None = None) -> dict:
+    severity = severity or {}
+    text = W.guard_sentence(e, severity)
     if "suggested" in e:
-        return {"t": e["t"], "agent": e["agent"], "badge": "guard", "saw": f"{e['incident']} assessed",
-                "decided": f"AI suggested {e['suggested']}; the guard allowed {e['allowed']}",
+        return {"t": e["t"], "agent": e["agent"], "badge": "guard", "saw": f"{e['incident']} assessed", "decided": text,
                 "why": e["why"], "ai_reason": e.get("ai_reason"), "other": None, "incident": e.get("incident"),
                 "key": ("g", e["t"], e["agent"], e.get("incident"))}
     if "withheld" in e:
         return {"t": e["t"], "agent": e["agent"], "badge": "guard-option", "saw": f"a request for {e.get('incident')}",
-                "decided": "the “after transfer” offer was not available to the AI", "why": e["why"], "other": None,
-                "incident": e.get("incident"), "key": ("g", e["agent"], e.get("incident"))}
-    return {"t": e["t"], "agent": e["agent"], "badge": "guard-option", "saw": f"an offer from {e['hospital']} for {e['victim']}",
-            "decided": "the conditional offer counted as late, so it could lead to the referee", "why": e["why"],
-            "other": None, "incident": e.get("incident"), "key": ("g", e.get("thread"), e["victim"])}
+                "decided": text, "why": e["why"], "other": None, "incident": e.get("incident"),
+                "key": ("g", e["agent"], e.get("incident"))}
+    return {"t": e["t"], "agent": e["agent"], "badge": "guard-option",
+            "saw": f"an offer from {W.place(e['hospital'])} for {W.victims_phrase([e['victim']], severity)}",
+            "decided": text, "why": e["why"], "other": None, "incident": e.get("incident"),
+            "key": ("g", e.get("thread"), e["victim"])}
 
 
 def merge_guards(cards: list[dict]) -> list[dict]:
@@ -401,8 +413,11 @@ def merge_guards(cards: list[dict]) -> list[dict]:
 
 def decision_html(c: dict) -> str:
     times = f" · {c['times']}×" if c.get("times", 1) > 1 else ""
-    ai = f"<div class='why'>AI's reason: {escape(c['ai_reason'])}</div>" if c.get("ai_reason") else ""
-    other = f"<div class='agent-d'>Other option: {escape(c['other'])}</div>" if c.get("other") else ""
-    return (f"<div class='dcard'><span class='ev-t'>{minute_tag(c['t'])}</span> {badge(c['badge'])} <b>{escape(agent_name(c['agent']))}</b>"
-            f"{times}<div>Saw {escape(c['saw'])}.</div><div>Decided: <b>{escape(c['decided'])}</b>.</div>"
-            f"<div class='why'>Why: {escape(c['why'])}</div>{ai}{other}</div>")
+    ai = f"<div class='why'>{escape(W.because(c['ai_reason'], 'llm'))}</div>" if c.get("ai_reason") else ""
+    rule = (c.get("other") or "").replace("rule order: ", "ranking ").replace("rule: ", "").replace("rules alone: ", "")
+    other = f"<div class='tl-rule'>Rule would have chosen: {escape(rule)}</div>" if rule else ""
+    why = "" if c["badge"] in ("guard", "guard-option") or W.reason_phrase(c["why"]) == c["decided"] \
+        else escape(W.because(c["why"], "llm" if c["badge"] == "llm" else None))
+    return (f"<div class='dcard'><span class='ev-t'>{minute_tag(c['t'])}</span> {badge(c['badge'])} <b>{escape(W.cap(W.place(c['agent'])))}</b>"
+            f"{times}<div>Saw {escape(c['saw'].rstrip('.'))}.</div><div>Decided: <b>{escape(c['decided'].rstrip('.'))}</b>.</div>"
+            f"<div class='why'>{why}</div>{ai}{other}</div>")

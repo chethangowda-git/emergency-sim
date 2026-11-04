@@ -1,7 +1,9 @@
 {
   "note": "Readable names and the Evaluation page's overview (DESIGN 13.1). Numbers are read from each evaluation's summary.json; only the text lives here. Evaluations not listed get a name from their settings and appear under 'Show all evaluations'.",
-  "default_replay": "evals/eval-011/runs/seed18-agents-r1",
-  "default_replay_label": "Final eval · AI + guard · seed 18 (100% of criticals on time; rules only 85.7%)",
+  "replay_presets": [
+    {"path": "demo/demo-seed376", "label": "Demo · burn beds scarce, trauma centre full, 2 criticals for 1 paramedic ambulance (seed 376)"},
+    {"path": "evals/eval-011/runs/seed18-agents-r1", "label": "Final eval · AI + guard · seed 18 (100% of criticals on time; rules only 85.7%)"}
+  ],
   "evaluations": {
     "eval-010": "Final · greedy and rules-only agents (seeds 1-20)",
     "eval-011": "Final · LLM + guard, 3 repeats (seeds 1-20)",

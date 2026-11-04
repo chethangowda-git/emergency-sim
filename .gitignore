@@ -1,5 +1,6 @@
 runs/*
 !runs/dev-evals/
+!runs/demo/
 runs/dev-evals/*/runs/
 !runs/evals/
 runs/evals/*

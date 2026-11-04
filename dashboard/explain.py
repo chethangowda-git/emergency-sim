@@ -10,6 +10,7 @@ from collections import Counter
 from html import escape
 
 from coordination.tools import mood_for
+from dashboard import wording as W
 from dashboard.names import hospital_name
 
 UNIT_NAMES = {"ALS": "Paramedic ambulance (ALS)", "BLS": "Basic ambulance (BLS)", "FIRE": "Fire team",
@@ -88,9 +89,10 @@ def now_sentence(run: dict, minute: int) -> str:
     arrived = [e for e in ev if e["type"] == "patient_delivered"]
     if arrived:
         parts.append(f"{plural(len(arrived), 'victim')} reached a hospital")
-    parts += [f"critical {e['victim']} missed its deadline" for e in ev
+    severity = {v["id"]: v["original_severity"] for v in run["victims"]}
+    parts += [f"{W.victims_phrase([e['victim']], severity)} missed their deadline" for e in ev
               if e["type"] == "deadline_missed" and e["severity"] == "critical"]
-    parts += [f"referee called in for {e['victim_ids'][0]}" for e in ev
+    parts += [f"referee called in for {W.victims_phrase(e['victim_ids'][:1], severity)}" for e in ev
               if e["type"] == "message" and e["msg_type"] == "escalation" and e.get("victim_ids")]
     full = [h["id"] for h in state["hospitals"] if h["er_used"] >= h["er_slots"]]
     almost = [h["id"] for h in state["hospitals"] if h["id"] not in full and h["utilization"] >= 0.85]
@@ -132,17 +134,18 @@ def victim_row(v: dict, units: dict[str, dict], minute: int, delivered: tuple[in
     u = units.get(v["unit"]) if v.get("unit") else None
     eta = u["eta"] if u and v["status"] == "in_transit" else None
     if delivered:
-        where = f"at {delivered[1]} since minute {delivered[0]}"
+        where = f"at {W.place(delivered[1])} since {W.minute_tag(delivered[0])}"
     elif v["status"] == "waiting":
         where = "waiting at the scene"
     elif v["status"] == "assigned":
-        where = f"being loaded into {unit_name(v['unit'])}" + (f", going to {u['hospital']}" if u and u["hospital"] else "")
+        where = f"being loaded into {unit_name(v['unit'])}" + (f", going to {W.place(u['hospital'])}" if u and u["hospital"] else "")
     elif v["status"] == "in_transit":
-        where = f"in {unit_name(v['unit'])} to {u['hospital'] if u else v['hospital']}" + (f", ETA {eta}" if eta else "")
+        where = f"in {unit_name(v['unit'])} to {W.place(u['hospital'] if u else v['hospital'])}" + (
+            f", arriving {W.minute_tag(eta)}" if eta else "")
     elif v["status"] == "at_door":
-        where = f"at {u['hospital'] if u else 'the hospital'}'s door, waiting for a slot"
+        where = f"at {W.place(u['hospital']) if u else 'the hospital'}'s door, waiting for a slot"
     else:
-        where = f"at {v['hospital']}"
+        where = f"at {W.place(v['hospital'])}" if v.get("hospital") else W.VICTIM_STATUSES.get(v["status"], "")
     return {"id": v["id"], "severity": v["original_severity"], "care": v["care_need"], "where": where,
             "deadline": v["deadline"], "status": victim_status(v, minute, eta, delivered)}
 
@@ -205,25 +208,31 @@ def hospital_cards(run: dict, minute: int) -> list[dict]:
         mine = [e for e in offers if e["agent"] == h["id"]]
         out.append({"id": h["id"], "name": hospital_name(h["id"], h["name"]), "mood": mood_for(h["utilization"]),
                     "er": f"{h['er_used']}/{h['er_slots']}" + (f" (+{h['reserved']})" if h["reserved"] else ""),
-                    "patients": [{"id": p["id"], "severity": p["original_severity"], "status": p["status"].replace("_", " "),
-                                  "walk_in": p["walk_in"]} for p in h["patients"]],
+                    "patients": [{"id": p["id"], "severity": p["original_severity"],
+                                  "status": W.VICTIM_STATUSES.get(p["status"], "in hospital"), "walk_in": p["walk_in"]}
+                                 for p in h["patients"]],
                     "offers": [(e["t"], e["decided_by"], e["reason"]) for e in mine[-4:]][::-1],
                     "offers_total": len(mine), "walk_ins": sum(1 for e in walk if e["hospital"] == h["id"])})
     return out
 
 
+def patient_phrase(p: dict, severity: dict[str, str]) -> str:
+    return f"{p['severity']} walk-in patient" if p["walk_in"] else W.victims_phrase([p["id"]], severity)
+
+
 def hospital_card_html(h: dict) -> str:
-    patients = ", ".join(f"{p['id']} ({p['severity']}{', walk-in' if p['walk_in'] else ''}: {p['status']})"
+    severity = {p["id"]: p["severity"] for p in h["patients"]}
+    patients = "; ".join(f"<span title='{p['id']}'>{escape(patient_phrase(p, severity))}: {escape(p['status'])}</span>"
                          for p in h["patients"]) or "no patients"
-    offers = "".join(f"<div class='ev'><span class='ev-t'>min {t}</span> {badge(by)} {escape(reason)}</div>"
+    offers = "".join(f"<div class='ev'><span class='ev-t'>min {t}</span> {badge(by)} {escape(W.because(reason, by))}</div>"
                      for t, by, reason in h["offers"])
     return (f"<div class='hcard'><b>{h['id']} {escape(h['name'])}</b> · mood {h['mood']} · {tip('ER', 'ER')} {h['er']}"
-            f" · {tip('Walk-ins', 'walk-ins')} so far {h['walk_ins']}<div class='desc'>{escape(patients)}</div>"
+            f" · {tip('Walk-ins', 'walk-ins')} so far {h['walk_ins']}<div class='desc'>{patients}</div>"
             f"<div class='agent-d'>Offers made: {h['offers_total']} (latest first)</div>{offers}</div>")
 
 
-BADGES = {"rule": ("Rule", "b-rule"), "llm": ("AI judgment", "b-ai"), "fallback": ("Fallback", "b-fb"),
-          "guard": ("AI blocked by guard", "b-guard"), "guard-option": ("Guard", "b-guard")}
+BADGES = {"rule": ("Rule", "b-rule"), "llm": ("AI", "b-ai"), "fallback": ("Fallback", "b-fb"),
+          "guard": ("Guard blocked", "b-guard"), "guard-option": ("Guard blocked", "b-guard")}
 
 
 def badge(kind: str) -> str:

@@ -96,9 +96,12 @@ dashboard/
   eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
   feed.py              # the Simulation page's tabbed feed: Incidents, Negotiations, Decisions, Hospitals, Log
   names.py             # hospital display names (display only; run files keep the internal names)
+  wording.py           # every event, message, reason and decision code in plain English (tests/test_wording.py)
+  timeline.py          # the Negotiations tab: one timeline per incident
   explain.py           # plain-language templates: friendly names, tooltips, "now" sentence, incident and hospital cards
   explain_agents.py    # negotiations as questions with chat bubbles, decision cards with the rule's alternative
   eval_views.py        # evaluation tables and Plotly charts
+tools/highlights.py    # ranks negotiations in recorded live runs, what-if with the rule, config/highlights.json
 tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
   llm_choices.py       # a recorded live run: where the LLM chose differently from the rule, and the effect
@@ -298,6 +301,7 @@ Agreed with the user after Phase 5: runs happen in real time instead of being co
 - [x] Playback: 1x = one simulated minute per second (0.5x to 10x), skip quiet time (default on), 8 frames per second with fading trails; outcomes unchanged (tests).
 - [x] Evaluation page opens on the final results (headline numbers, chart, contributions, timeline), readable names, Show all evaluations, Run a new evaluation at the bottom; named evaluations' summaries committed.
 - [x] Explained without help: "what's happening now" sentence, feed tabs Incidents / Negotiations / Decisions / Hospitals / Log from templates (no LLM calls; recorded reasons verbatim), guard steps logged as `guard` events (no decision or metric changes), map clicks open cards and highlight, friendly names and tooltips, intro with a final-eval replay as default, "How to read this".
+- [x] Readable for a non-technical viewer: one wording module (coverage test), Negotiations as one timeline per incident, highlights with "Jump to this moment", the Demo preset (seed 376 + 2 placed incidents, recorded live, runs/demo/).
 - [x] Polish: neutral hospital display names, no overlapping map labels (walk-ins and parked vehicles on hover), feed fills the window, Negotiations as list + detail with merged bubbles, hospital chips and plain wording.
 
 ## Things not to do

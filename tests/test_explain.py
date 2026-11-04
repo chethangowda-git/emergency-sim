@@ -150,7 +150,7 @@ def test_ai_decisions_show_the_rules_alternative_and_guard_cards_merge():
     assert "once a patient is transferred out" in ai["decided"]
     assert len(explain_agents.decision_cards(events, 60, {}, calls, show_all=True)) == 3
     html = explain_agents.decision_html(ai)
-    assert "AI judgment" in html and "Other option" in html
+    assert ">AI<" in html and "Rule would have chosen: accept whoever fits now" in html and "AI&#x27;s words" in html
 
 
 def test_hospital_cards_list_patients_offers_and_walk_ins(tmp_path):

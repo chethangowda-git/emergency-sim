@@ -94,6 +94,14 @@ div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdet
 .c-waiting {background: rgba(42,120,214,.3);} .c-offered {background: rgba(46,125,50,.35);}
 .c-awarded, .c-accepted {background: rgba(46,125,50,.6);} .c-declined, .c-cant {background: rgba(198,40,40,.4);}
 .c-referee {background: rgba(123,31,162,.45);} .c-later {background: rgba(230,120,0,.35);}
+.hl {font-size: 0.8rem; margin-top: 4px;}
+.tl-step {border-left: 2px solid rgba(128,128,128,.35); margin: 0 0 0 7px; padding: 3px 0 5px 12px; font-size: 0.8rem;
+          position: relative;}
+.tl-dot {position: absolute; left: -9px; top: 3px; font-size: 0.72rem;}
+.tl-line {font-size: 0.76rem; opacity: 0.9; line-height: 1.35;}
+.tl-rule {font-size: 0.72rem; opacity: 0.75; font-style: italic;}
+.st-key-negdetail div[data-testid="stExpander"] {margin: -4px 0 4px 19px;}
+.st-key-negdetail div[data-testid="stExpander"] summary {padding: 0.1rem 0.5rem; font-size: 0.72rem; min-height: 0;}
 </style>
 """
 
