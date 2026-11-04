@@ -29,9 +29,13 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .ag-i {font-size: 0.68rem; opacity: 0.7; border: 1px solid rgba(128,128,128,.4); border-radius: 4px; padding: 0 3px;
     cursor: help;}
 .tab-intro {font-size: 0.74rem; opacity: 0.6; margin: -4px 0 4px 0;}
-.st-key-agentlist {gap: 0.35rem !important;}
-.st-key-agentlist [class*="st-key-agent_open_"] button {border-color: #2a78d6; background: rgba(42,120,214,.14);}
-.st-key-agentlist [class*="st-key-earlier_"] button p {font-size: 0.74rem; font-weight: 400; opacity: 0.8;}
+.st-key-agentlist {gap: 12px !important; margin-top: 17px;}
+.st-key-agentlist [class*="st-key-agentbox_"] {border-color: #2a78d6 !important; background: rgba(42,120,214,.08);
+    padding: 8px !important; gap: 8px !important;}
+.st-key-agentlist [class*="st-key-agent_open_"] button {border: none !important; background: transparent !important; padding: 0 1px !important;
+    min-height: 3.3rem !important; height: 3.3rem !important;}
+.st-key-agentlist [class*="st-key-older_"] button p {font-size: 0.74rem; font-weight: 400; opacity: 0.8;}
+.st-key-agentlist [class*="st-key-agentbox_"] .ag-lines {margin: 0;}
 .st-key-agentlist [class*="st-key-agent_"] button {justify-content: flex-start; text-align: left; padding: 4px 9px;
     min-height: 4.7rem; height: 4.7rem; overflow: hidden; align-items: flex-start;}
 .st-key-agentlist [class*="st-key-agent_"] button div, .st-key-agentlist [class*="st-key-agent_"] button p {

@@ -70,7 +70,7 @@ def toggle_agent(agent: str) -> None:
     st.session_state.agent_shown = agents_tab.PAGE
 
 
-def show_earlier() -> None:
+def show_older() -> None:
     st.session_state.agent_shown = st.session_state.get("agent_shown", agents_tab.PAGE) + agents_tab.PAGE
 
 
@@ -99,26 +99,33 @@ def render(key: str, run: dict, minute: int, agents: bool, height: int, roads=No
 
 
 def agents_list(key: str, run: dict, minute: int, roads) -> None:
-    """One card per agent; clicking one opens its messages right below it (one agent at a time)."""
+    """One card per agent; clicking one opens its messages inside the same bordered box (one agent at a time)."""
     opened = st.session_state.get("agent_open")
     with st.container(key="agentlist"):
         for card in cards_at(key, minute, run, roads):
-            is_open = card["id"] == opened             # the key carries the state, for the open card's highlight
-            st.button(("▾ " if is_open else "▸ ") + agents_tab.card_label(card),
-                      key=f"agent_{'open_' if is_open else ''}{card['id']}", width="stretch",
-                      on_click=toggle_agent, args=(card["id"],),
-                      help="Click to show this agent's messages below; click again to close.")
-            if card["id"] == opened:
+            if card["id"] != opened:
+                agent_button(card, False)
+                continue
+            with st.container(border=True, key=f"agentbox_{card['id']}"):
+                agent_button(card, True)
                 agent_panel(key, run, minute, roads, card["id"])
 
 
+def agent_button(card: dict, is_open: bool) -> None:
+    st.button(("▾ " if is_open else "▸ ") + agents_tab.card_label(card),
+              key=f"agent_{'open_' if is_open else ''}{card['id']}", width="stretch",   # the key styles the open card
+              on_click=toggle_agent, args=(card["id"],),
+              help="Click to close." if is_open else "Click to show this agent's messages; click again to close.")
+
+
 def agent_panel(key: str, run: dict, minute: int, roads, agent: str) -> None:
+    """Newest first; 'Show older' at the bottom adds 10 more."""
     lines = agent_lines_at(key, minute, agent, run, roads)
     shown = st.session_state.get("agent_shown", agents_tab.PAGE)
-    earlier = len(lines) - shown
-    if earlier > 0:
-        st.button(f"Show earlier ({earlier} more)", key=f"earlier_{agent}", type="tertiary", on_click=show_earlier)
-    st.markdown(agents_tab.lines_html(lines[-shown:]), unsafe_allow_html=True)
+    st.markdown(agents_tab.lines_html(agents_tab.newest_first(lines, shown)), unsafe_allow_html=True)
+    older = len(lines) - shown
+    if older > 0:
+        st.button(f"Show older ({older} more)", key=f"older_{agent}", type="tertiary", on_click=show_older)
 
 
 def incidents_tab(key: str, run: dict, minute: int, roads) -> None:

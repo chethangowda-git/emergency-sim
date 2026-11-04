@@ -193,6 +193,9 @@ def test_an_agents_messages_show_direction_incident_and_stop_at_the_minute(tmp_p
     assert "class='ag-l out'" in html and "class='ag-l in'" in html and "← from " in html and "<b>→ " in html
     assert not CODE.search(visible(html)), visible(html)
     assert A.lines_html([]) == "<div class='cv-n'>· No messages yet.</div>"
+    top = A.newest_first(lines, 10)
+    assert len(top) == min(10, len(lines)) and top[0] == lines[-1]
+    assert [l["t"] for l in top] == sorted((l["t"] for l in top), reverse=True)
 
 
 def test_every_tab_says_what_it_shows():

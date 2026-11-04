@@ -92,7 +92,7 @@ def card_label(card: dict) -> str:
     return f"{name}  \n{md(card['status'])}  \n:gray[{md(card['last_text'] or 'No message yet')}]"
 
 
-PAGE = 10   # lines shown when an agent opens; "Show earlier" adds this many more
+PAGE = 10   # lines shown when an agent opens; "Show older" adds this many more
 
 
 def involves(line: dict, agent: str) -> bool:
@@ -114,6 +114,12 @@ def agent_lines(ctx: C.Context, agent: str) -> list[dict]:
                 out.append({**line, "incident": iid, "incident_name": names.get(iid, "Between hospitals"),
                             "out": line["sender"] == agent})
     return sorted(out, key=lambda l: l["t"])
+
+
+def newest_first(lines: list[dict], shown: int) -> list[dict]:
+    """The latest `shown` lines, newest first (lines come in time order; same-minute lines keep their order
+    reversed too, so the very last message is on top)."""
+    return lines[::-1][:shown]
 
 
 def lines_html(lines: list[dict]) -> str:
