@@ -325,7 +325,8 @@ MESSAGES = {
     "transfer_request": lambda m, p, who: f"Can you take {who} ({p.get('care_need', 'general')} care)?",
     "transfer_response": lambda m, p, who: "Yes, I'll take them." if p.get("accept") else "No, I can't take them.",
     "capacity_alert": lambda m, p, who: f"A walk-in took the slot I had reserved for {who}.",
-    "staff_request": lambda m, p, who: f"Can you lend me a {p.get('kind', 'staff member')} for {p.get('minutes')} min?",
+    "staff_request": lambda m, p, who: f"Can you lend me a {p.get('kind', 'staff member')} for {p.get('minutes')} min?"
+                                       + (f" {staff_why(m['reason'])}." if staff_why(m.get("reason")) else ""),
     "mutual_aid_request": lambda m, p, who: f"Can you lend a vehicle for {p.get('incident')} until {minute_tag(p.get('until'))}?",
     "swap_request": lambda m, p, who: f"Can your vehicle take over a job so an ambulance is free for {m.get('incident_id')}?",
 }
@@ -343,3 +344,47 @@ def guard_sentence(e: dict, severity: dict[str, str]) -> str:
         return f"The guard kept “accept after a transfer” from {place(e['agent'])}'s AI because {e['why']}."
     return (f"The guard counted {place(e.get('hospital', ''))}'s conditional offer for "
             f"{victims_phrase([e['victim']], severity)} as too late because {e['why']}.")
+
+
+# ----- first person, for the agents' own lines in a conversation -----
+
+MY_REASONS = {  # a hospital's or Dispatch's rule reason, as the agent would say it
+    "no free capacity now": "my ER is full", "no free capacity": "my ER is full",
+    "cannot treat this care need": "I can't treat this injury",
+    "keeping my last slots for criticals": "I'm keeping my last beds for critical patients",
+    "capacity taken since my offer": "my room was taken since I offered",
+    "transfer did not happen": "the transfer I counted on didn't happen",
+    "transfer not started in time": "the transfer didn't start in time",
+    "no staff to spare": "I have no staff to spare", "my vehicle is busy": "my vehicle is busy",
+    "I may need my vehicle for a transfer": "I may need my vehicle for a transfer",
+    "vehicle busy": "my vehicle is busy", "rule hospital does not lend": "I don't lend staff",
+    "lateral transfer; keeping capacity for criticals": "I'm keeping room for critical patients",
+}
+
+
+def my_reason(reason: str | None) -> str:
+    """'protective: decline (no free capacity now)' -> 'my ER is full'; '' when there is nothing to say."""
+    if not reason:
+        return ""
+    m = re.match(r"^(eager|normal|protective): decline \((.+)\)$", reason)
+    if m:
+        return MY_REASONS.get(m[2], reason_phrase(m[2]))
+    return MY_REASONS.get(reason, "")
+
+
+def units_join(unit_ids) -> str:
+    """'fire team FIRE2 and paramedic ambulance ALS1'."""
+    names = [unit_name(u) for u in unit_ids]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1] if names else "no units"
+
+
+def join_words(parts: list[str]) -> str:
+    """'H1', 'H1 and H2', 'H1, H2 and H3'."""
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1] if parts else ""
+
+
+def staff_why(reason: str | None) -> str:
+    """'1 patient(s) waiting for a doctor' -> '1 patient is waiting for a doctor'."""
+    m = re.match(r"^(\d+) patient\(s\) waiting for a (\w+)$", reason or "")
+    return "" if not m else f"{m[1]} patient {'is' if m[1] == '1' else 'are'} waiting for a {m[2]}".replace(
+        "patient are", "patients are")

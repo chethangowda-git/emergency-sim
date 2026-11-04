@@ -95,10 +95,11 @@ div:has(> .st-key-feedbox), div:has(> .st-key-neglist), div:has(> .st-key-negdet
 .c-awarded, .c-accepted {background: rgba(46,125,50,.6);} .c-declined, .c-cant {background: rgba(198,40,40,.4);}
 .c-referee {background: rgba(123,31,162,.45);} .c-later {background: rgba(230,120,0,.35);}
 .hl {font-size: 0.8rem; margin-top: 4px;}
-.story {font-size: 0.8rem; line-height: 1.4; margin: 0 0 8px 0; padding-left: 1.6rem;}
-.story li, .story li p {margin-bottom: 4px; font-size: 0.8rem !important; line-height: 1.4;}
-.st-sub {font-size: 0.76rem; opacity: 0.85; margin-left: 0.2rem;}
-.st-now {font-size: 0.78rem; opacity: 0.75; margin: -2px 0 8px 1.6rem; font-style: italic;}
+.convo {font-size: 0.8rem; line-height: 1.4; margin: 0 0 8px 0; padding-left: 0.4rem;}
+.convo .cv {margin-bottom: 3px; padding-left: 3.4rem; text-indent: -3.4rem;}
+.convo .cv-t {display: inline-block; width: 3.2rem; text-indent: 0; opacity: 0.6; font-variant-numeric: tabular-nums;}
+.convo .cv b span[title] {cursor: help;}
+.cv-n {margin: 0 0 3px 3.4rem; font-size: 0.76rem; opacity: 0.62;}
 .ai-tag {font-size: 0.68rem; opacity: 0.7; cursor: help; border-bottom: 1px dotted currentColor;}
 .st-key-feedbox div[data-testid="stButton"] button[kind="tertiary"] {justify-content: flex-start; text-align: left;}
 .tl-step {border-left: 2px solid rgba(128,128,128,.35); margin: 0 0 0 7px; padding: 3px 0 5px 12px; font-size: 0.8rem;

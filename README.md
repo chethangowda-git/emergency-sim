@@ -85,7 +85,7 @@ The page opens ready to replay the **Demo**, a recorded run that forces negotiat
 
 The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their name and ER use; hover one for its walk-ins, ward and staff, and the hospital vehicles parked there. Labels never sit on top of each other. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: four KPI cards (criticals on time, unserved criticals, average time to care, victims delivered), units free by type, one row per hospital with an ER bar, and a feed with five tabs, all following the clock:
 
-- **Incidents** (default): one line per incident, active ones first. Click one to read its story as numbered plain sentences: the units that came, which hospitals were asked and what each one answered and why, any decision by the referee, and how each patient ended ("The critical patient reached Muddy River Community at min 153. On time."). Clicking an incident here or on the map highlights it and its units. **(AI)** marks a decision the AI made; hover it for the AI's own words and what the rule would have chosen.
+- **Incidents** (default): one line per incident, active ones first, then **Between hospitals** (staff loans and transfers that help no incident). Click one to read its conversation: what the agents said to each other, in time order, one line per message, for example "min 86 Dispatch → H1, H2: Can you take the critical patient? Arrives in about 10 min." and "min 87 H1 → Dispatch: No, my ER is full." Grey lines starting with "·" say what happened in the world (an ambulance left, a patient reached a hospital on time) and when the guard blocked an AI choice, naming the agent. Repeated rounds fold into one line. Hover a hospital ID for its name. Clicking an incident here or on the map highlights it and its units. **(AI)** after a line means that agent's AI decided it; hover it for the AI's own words and what the rule would have chosen.
 - **Log**: the raw event timeline, for debugging.
 
 All of this text is filled in from the run's log by templates (no extra AI calls); the AI's own reasons are quoted word for word. 
@@ -132,7 +132,7 @@ For agents, the control bar also has an **LLM** choice: rules only (no key neede
 
 ## Dashboard v2 (Phase 4)
 
-For an agent run, the incident stories show the agents at work, and guard steps read as plain sentences. Guard steps are logged as `guard` events in `events.jsonl`; they change no decision and no metric.
+For an agent run, the incident conversations show the agents at work, and guard steps read as plain narrator lines naming the agent. Guard steps are logged as `guard` events in `events.jsonl`; they change no decision and no metric.
 
 **Compare with baseline** (⚙, for saved agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run: two maps on one clock, and on the right a baseline vs agents table of the KPIs at that minute with units free and ER use for both. If no baseline run exists yet, a button runs it (it takes about a second), with the same placed incidents.
 

@@ -94,10 +94,10 @@ dashboard/
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
   evaluation_page.py   # the Evaluation page: final-results overview, picker, results, Run a new evaluation
   eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
-  feed.py              # the Simulation page's feed: Incidents (stories) and Log
+  feed.py              # the Simulation page's feed: Incidents (conversations) and Log
   names.py             # hospital display names (display only; run files keep the internal names)
   wording.py           # every event, message, reason and decision code in plain English (tests/test_wording.py)
-  story.py             # each incident's story as numbered plain sentences (the Incidents tab)
+  conversation.py      # each incident's agent conversation, one line per message (the Incidents tab)
   explain.py           # the "what's happening now" sentence and the tooltip glossary
   explain_agents.py    # hospital status per thread, recorded LLM calls per decision, the rule's alternative
   eval_views.py        # evaluation tables and Plotly charts
@@ -303,6 +303,7 @@ Agreed with the user after Phase 5: runs happen in real time instead of being co
 - [x] Explained without help: "what's happening now" sentence, feed tabs Incidents / Negotiations / Decisions / Hospitals / Log from templates (no LLM calls; recorded reasons verbatim), guard steps logged as `guard` events (no decision or metric changes), map clicks open cards and highlight, friendly names and tooltips, intro with a final-eval replay as default, "How to read this".
 - [x] Readable for a non-technical viewer: one wording module (coverage test), Negotiations as one timeline per incident, highlights with "Jump to this moment", the Demo preset (seed 376 + 2 placed incidents, recorded live, runs/demo/).
 - [x] Simpler feed: only Incidents (one story per incident, numbered plain sentences, one "(AI)" tag with the AI's words on hover) and Log.
+- [x] Conversation feed: each incident's agent conversation in time order (sender → recipients, reason in the sentence, "·" narrator lines for world events, guard blocks and folded repeats), Between hospitals entry, replacing the stories.
 - [x] Polish: neutral hospital display names, no overlapping map labels (walk-ins and parked vehicles on hover), feed fills the window, Negotiations as list + detail with merged bubbles, hospital chips and plain wording.
 
 ## Things not to do

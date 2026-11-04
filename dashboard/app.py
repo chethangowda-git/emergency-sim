@@ -196,10 +196,11 @@ HOW_TO_READ = """**How to read this**
 
 1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
    carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
-   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its story.
-2. **The incident stories** (right). Click an incident to read what happened there, step by step: the units
-   that came, which hospitals were asked and what each one answered, any decision by the referee, and how each
-   patient ended. **(AI)** marks a decision the AI made; hover it for the AI's own words.
+   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its conversation.
+2. **The conversations** (right). Click an incident to read what the agents said to each other about it, in
+   time order: "Dispatch → H1, H2: Can you take the critical patient?" and each hospital's answer with its
+   reason. Grey lines starting with "·" say what happened in the world. **(AI)** after a line means that
+   agent's AI decided it; hover it for the AI's own words. Hover a hospital (H1, H2, H3) for its name.
 3. **The results** (top right): critical victims who reached care in time, those not yet served, average time
    to care and victims delivered. The **Evaluation** page compares the policies over 20 scenarios.
 """
@@ -476,7 +477,7 @@ def side_panel(key: str, run: dict, minute: int) -> None:
     if st.session_state.spawn_mode and live() is not None:
         spawn_form()
         return
-    feed.render(key, run, minute, is_agents(run), FEED_HEIGHT)
+    feed.render(key, run, minute, is_agents(run), FEED_HEIGHT, roads())
 
 
 def comparison_panel(key: str, run: dict, base_id: str, minute: int) -> None:
@@ -592,7 +593,7 @@ def highlights_list(where: str) -> None:
                       f"{escape(h['label'])} · {escape(W.minute_tag(h['minute']))}</div>{extra}</div>",
                       unsafe_allow_html=True)
         go.button("Jump to this moment", key=f"hl_{where}_{k}", on_click=jump_to, args=(h,),
-                  help="Opens that run, paused at this minute, with the incident's story open")
+                  help="Opens that run, paused at this minute, with the incident's conversation open")
 
 
 def jump_to(h: dict) -> None:
