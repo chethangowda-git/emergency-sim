@@ -505,7 +505,7 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 5. Agents are event-driven, use a fast path when only one option fits, and batch simultaneous requests. Measured scale (12 incidents, `gpt-4o-mini-2024-07-18`): about 150 to 250 LLM calls per run (seed 42: 155 calls, of which 74 hospital admission offers, 47 Dispatch unit plans, 19 awards and 12 incident assessments; about 132,000 input and 8,400 output tokens; about 4 minutes. Before hospital offers carried their details, the same seed took 243 calls). Each live call records its token usage in `llm_calls.jsonl`.
 6. A live run's speed, pauses and one-minute steps never change its outcome: pacing only adds waiting between minutes. A finished live run saves exactly the files a headless run of the same seed, policy and placed incidents saves.
 7. API errors never become silent rule fallbacks in reported results. A live call retries rate limits (honouring `Retry-After`), connection errors, timeouts and server errors with exponential backoff and jitter; quota and billing errors are not retried. In an evaluation, a run with any remaining API error (`llm_error`) is run again, up to 3 attempts in all; if it still fails it is listed in `failed.jsonl` and in the summary, and left out of the results (a replay leaves it out too). Agents SDK tracing is off; `llm_calls.jsonl` is the record. Evaluation runs may go in parallel processes; `results.jsonl` is written in plan order.
-8. **LLM proposes, rules guard** (`llm_guard` in `config/llm.json`, default on; recorded in each agent run's `config.json`, and a replay uses the recorded setting, off for runs recorded before it existed). The LLM still chooses among the rule-built options, but rules check the two choices the development-seed diagnosis found costly (docs/FINDINGS.md): "after transfer" offers (section 4.3 rung 4: only when a transfer could start; section 4.4 trigger 1: at least 15 minutes of slack) and extra units (section 4.1: at most 1 extra ALS; section 4.2: filled last, never a shortfall). With the LLM off the guard changes nothing, because rules never choose these.
+8. **LLM proposes, rules guard** (`llm_guard` in `config/llm.json`, default on; recorded in each agent run's `config.json`, and a replay uses the recorded setting, off for runs recorded before it existed). The LLM still chooses among the rule-built options, but rules check the two choices the development-seed diagnosis found costly (docs/FINDINGS.md): "after transfer" offers (section 4.3 rung 4: only when a transfer could start; section 4.4 trigger 1: at least 15 minutes of slack) and extra units (section 4.1: at most 1 extra ALS; section 4.2: filled last, never a shortfall). With the LLM off the guard changes nothing, because rules never choose these. Each guard step is logged as a `guard` event (rule, agent, why, and what the AI suggested or was not offered) for the dashboard; it changes no decision, and metrics ignore it.
 
 ---
 
@@ -517,7 +517,9 @@ The dashboard is the only way the user runs anything: no command line needed. A 
 
 Both pages fit one screen at 1440 x 900 with no scrolling. Page navigation sits at the top; there is no sidebar.
 
-**Simulation page.** One thin control bar on top, the clock line and a thin progress bar ("Min X / 359") under it, the map on the left (about 60% of the width, full height) with a one-line legend, and the right panel. In compare mode the map area holds the two maps side by side and the right panel becomes the KPI comparison table.
+**Simulation page.** One thin control bar on top, the clock line and a thin progress bar ("Min X / 359") under it, then a "what's happening now" sentence for the minute (for example "Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). The map is on the left (about 60% of the width, full height) with a one-line legend; the right panel holds the KPI cards, units free, one row per hospital and the tabbed feed. In compare mode the map area holds the two maps side by side and the right panel becomes the KPI comparison table.
+
+Before a run the page shows "Press ▶ Run to start" with what Run will do. The defaults are seed 42, agents, and a replay of a recorded final-evaluation run (`default_replay` in `config/evaluations.json`; a replay uses its recorded seed). **❓ How to read this** opens a three-step guide: the map, the incident cards, the results.
 
 | Control (top bar) | What it does |
 |---|---|
@@ -529,6 +531,7 @@ Both pages fit one screen at 1440 x 900 with no scrolling. Page navigation sits 
 | Speed | 0.5x, 1x, 2x, 4x, 10x; **1x = one simulated minute per real second** (default) |
 | Skip quiet time | On by default: while no unit is moving and no incident is open, the clock fast-forwards (about 30 simulated minutes per second, shown as "skipping quiet time") and returns to the chosen speed when an incident is reported or a unit starts moving |
 | 🚨 Spawn | Live runs only: pauses, shows clickable street intersections, places an incident (section 3.3), resumes |
+| ❓ (popover) | How to read this: the map, the incident cards, the results |
 | ⚙ (popover) | Incidents per scenario (3, 4, 6 or 12; default 4; the evaluation always uses 12; one is always the surge), Restart with new seed (random seed, waits paused at minute 0), Past runs (replayed from minute 0 with the same clock), Compare with baseline (saved agent runs; baseline on the same seed and placed incidents, or a button that runs it) |
 
 Speed and skipping quiet time only pace the clock; they never change a run (section 12.6).
@@ -537,16 +540,22 @@ Speed and skipping quiet time only pace the clock; they never change a run (sect
 
 ### 13.2 Panels
 
+All plain-language text is filled into templates from the logged run (timeline, events, messages, decisions, guard events and recorded LLM calls); the dashboard never calls an LLM. The agents' own recorded reasons are shown word for word. Friendly names come first ("Paramedic ambulance (ALS)", "Basic ambulance (BLS)", "Referee agent (Arbiter)"), and every term, KPI and control has an ⓘ tooltip.
+
 | Panel | Contents |
 |---|---|
-| Map | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without) sized by victims; units glide along streets (several frames per simulated minute) with a short fading trail behind them and their remaining route dashed; ALS, BLS, teams and hospital vehicles in distinct styles; hospitals as markers showing ER use and "Walk-in patients (N)" |
-| KPI cards | Criticals on time, unserved criticals, average report-to-care time, victims delivered, updating with the clock |
+| Map | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without, grey when done) sized by victims; units glide along streets (several frames per simulated minute) with a short fading trail and their remaining route dashed; hospitals show ER use and "Walk-in patients (N)". Clicking an incident or a unit opens that incident's card; a highlighted incident gets a ring, and its units and routes are drawn in yellow |
+| KPI cards | Criticals on time, unserved criticals, average report-to-care time, victims delivered |
 | Units | Units free by type, on one line |
-| Hospitals | One compact row per hospital with an ER bar: ER use (and reservations), free doctors, walk-ins in the ER |
-| Feed (tabs) | Events (the world's events, newest first); Agents (each agent's status, pending requests, recent messages, last decision, and hospital mood); Negotiations (negotiation totals, the threads so far and the most recently active one in detail). Fixed height, scrolls inside |
+| Hospitals | One compact row per hospital with an ER bar: ER use (and reservations), free doctors, walk-ins |
+| Feed: Incidents (default) | One card per incident, least time left first; finished incidents collapse to one line at the bottom. Each card: title, a chip with open criticals and minutes left, a 5-step progress bar (reported, units sent, scene cleared, transporting, all at hospital), one row per victim (where they are, which unit, ETA) with **on track** (15 minutes or more to spare), **tight** (less) or **late**, and its admission negotiations ("1 round, awarded to H3, reserved"). Clicking a card title highlights the incident on the map |
+| Feed: Negotiations | One thread per negotiation, titled as the question ("Where should I07's 2 serious victims go?"), with an outcome badge (agreed / escalated to referee / no deal / in progress), a one-line outcome, then one sentence per message, rounds marked and the reason in grey ("AI:" when the language model gave it) |
+| Feed: Decisions | One card per agent decision: what it saw, what it decided, why, and the other option (the rule's choice, from the recorded LLM call). Badges: Rule, AI judgment, AI blocked by guard (what the AI suggested and why the guard limited it), Guard (an option the guard kept from the AI, or a conditional offer it counted as late), Fallback. By default only where the AI differed from the rule, a guard step, a fallback or a referee ruling; a toggle shows every decision. Repeated guard steps in one negotiation become one card with a count |
+| Feed: Hospitals | Each hospital's mood, ER use, patients, latest offers and walk-ins so far |
+| Feed: Log | The raw event timeline, including messages and decisions, for debugging |
 | Compare | KPI comparison table at the minute (baseline, agents, change, better or worse), units free and ER use for both |
 
-All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
+A filter (🔍) limits the feed to one incident or one agent. Cards and messages from the last minute are marked, so what changed stands out. All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
 
 ### 13.3 Live runs
 

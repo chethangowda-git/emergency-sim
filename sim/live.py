@@ -215,5 +215,6 @@ class LiveRun:
         config = {"run_id": None, "seed": self.prep.seed, "policy": self.prep.policy.name,
                   "sim": w.cfg.to_dict(), "spawns": list(self.prep.spawns)}
         self._view = {"run_id": None, "config": config, "events": list(w.events), "trips_by_unit": by_unit,
-                      "timeline": list(w.timeline), "victims": incident_victims(w)}
+                      "timeline": list(w.timeline), "victims": incident_victims(w),
+                      "llm_calls": list(self.prep.llm.calls) if self.prep.llm is not None else []}
         self._quiet = is_quiet(w.timeline[-1])

@@ -49,6 +49,7 @@ def load_run(run_id: str, runs_dir: Path = RUNS_DIR) -> dict:
         "timeline": _jsonl(d / "timeline.jsonl"),
         "metrics": json.loads((d / "metrics.json").read_text()),
         "victims": json.loads((d / "victims.json").read_text()),
+        "llm_calls": _jsonl(d / "llm_calls.jsonl") if (d / "llm_calls.jsonl").exists() else [],
     }
 
 
@@ -124,3 +125,11 @@ def baseline_for(run_id: str, runs_dir: Path = RUNS_DIR) -> str | None:
                 and (o / "scenario.json").read_bytes() == scenario):
             return other
     return None
+
+
+def featured_replay(runs_dir: Path = RUNS_DIR) -> str | None:
+    """The recorded final-evaluation run the Simulation page offers first (config/evaluations.json):
+    a path under runs/ such as evals/eval-011/runs/seed18-agents-r1, if it is on this machine."""
+    catalog = ROOT / "config" / "evaluations.json"
+    path = json.loads(catalog.read_text()).get("default_replay") if catalog.exists() else None
+    return path if path and (runs_dir / path / "llm_calls.jsonl").exists() else None

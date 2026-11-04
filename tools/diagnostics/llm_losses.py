@@ -31,7 +31,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from coordination.dispatch import rule_ranking
-from coordination.hospital import HospitalAgent
+from coordination.choices import rule_default
 from coordination.llm import LLMClient
 from coordination.schemas import IncidentReport
 from evaluation.runner import load_evaluation
@@ -46,15 +46,6 @@ STUCK_MINUTES = 15   # longer than any award may wait for its answer (a conditio
 
 
 # ----- what the rule would have answered -----
-
-def rule_default(agent: str, purpose: str, payload: dict) -> str | None:
-    opts = payload.get("options") or []
-    if purpose == "admission":
-        return HospitalAgent._admission_default(payload["mood"], opts)
-    if purpose == "staff":
-        return "send_now" if "send_now" in opts else opts[0]
-    return {"award": "earliest", "transfer": "accept", "resolve": opts[0] if opts else None}.get(purpose)
-
 
 def kinds_of(agent: str, purpose: str, payload: dict, out: dict) -> set[str]:
     """The kinds of deviation from the rule in one recorded answer (empty when it agrees)."""

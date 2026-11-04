@@ -26,6 +26,7 @@ class DispatchAgent:
         self.llm = llm
         self.negotiate = negotiate
         self.guard = guard
+        self.blocked: list[dict] = []   # conditional offers the guard counted as late in the last award, for the log
         self._last_situation: tuple | None = None
         self._last_judgment: DispatchJudgment | None = None
 
@@ -193,6 +194,7 @@ class DispatchAgent:
     # ----- admission award -----
 
     def award(self, scope: DispatchScope, req: AdmissionRequest, offers: list[AdmissionOffer]) -> AwardDecision:
+        self.blocked = self._late_conditionals(scope, req, offers) if self.guard else []
         plans = self._award_plans(scope, req, offers)
         ids = list(plans)
         payload = {"t": scope.t, "request": req.model_dump(), "offers": [o.model_dump() for o in offers],
@@ -227,6 +229,18 @@ class DispatchAgent:
         """Victims aboard one unit go to one hospital together, or wait for the next round (DESIGN 5.2)."""
         whole = {k: p for k, p in plans.items() if len(p[0]) == 1 and set(p[0][0].victims) == victims}
         return whole or {"earliest": ([], plans["earliest"][1])}
+
+    def _late_conditionals(self, scope, req, offers) -> list[dict]:
+        """Victims whose only in-time offers were conditional ones with less than the guard's slack."""
+        nodes = {h["id"]: h for h in scope.hospitals()}
+        plain, guarded = self._offered(scope, req, offers, nodes), self._offered(scope, req, offers, nodes, True)
+        out = []
+        for v in req.victims:
+            fits = lambda opts: [o for o in opts if v.deadline is None or o[1] <= v.deadline]
+            if fits(plain[v.id]) and not fits(guarded[v.id]):
+                h, arrival = min(fits(plain[v.id]), key=lambda o: (o[1], o[0]))
+                out.append({"victim": v.id, "hospital": h, "slack": v.deadline - arrival})
+        return out
 
     @staticmethod
     def _offered(scope, req, offers, nodes, guard: bool = False) -> dict[str, list[tuple[str, int]]]:

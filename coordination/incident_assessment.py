@@ -48,6 +48,7 @@ class IncidentAssessmentAgent:
     def __init__(self, llm: LLMClient, guard: bool = False) -> None:
         self.llm = llm
         self.guard = guard
+        self.blocked: dict | None = None   # what the guard held back in the last assessment, for the log
 
     def rule_report(self, scope: IncidentScope, iid: str) -> IncidentReport:
         inc = scope.incident(iid)
@@ -59,6 +60,7 @@ class IncidentAssessmentAgent:
                               decided_by="rule")
 
     def assess(self, scope: IncidentScope, iid: str) -> IncidentReport:
+        self.blocked = None
         report = self.rule_report(scope, iid)
         description = scope.incident(iid)["description"]
         if not description or not self.llm.enabled:
@@ -69,6 +71,8 @@ class IncidentAssessmentAgent:
             return report.model_copy(update={"decided_by": "fallback", "note": f"LLM fallback: {result.error}"})
         j: IAJudgment = result.output
         extra_als = min(j.extra_als, GUARD_MAX_EXTRA_ALS) if self.guard else j.extra_als
+        if extra_als < j.extra_als:
+            self.blocked = {"suggested": j.extra_als, "allowed": extra_als, "ai_reason": j.note}
         needed = report.units_needed.model_copy(update={"ALS": report.units_needed.ALS + extra_als,
                                                         "BLS": report.units_needed.BLS + j.extra_bls})
         return report.model_copy(update={"units_needed": needed, "flags": j.flags, "note": j.note,

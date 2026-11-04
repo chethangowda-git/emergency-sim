@@ -75,13 +75,22 @@ You only need Python 3.11 or newer installed. The first launch creates a virtual
 
 The dashboard opens at <http://localhost:8501>, with **Simulation** and **Evaluation** at the top. Each page fits one screen (1440 × 900): the controls are in one bar along the top, the map is on the left, and the numbers are on the right.
 
+The page opens ready to replay a recorded run from the final evaluation (agents with the AI and the guard): just press **▶ Run**. **❓** opens a three-step guide to reading the page, and every control and number has a tooltip (ⓘ).
+
 1. Pick a **seed** (42 is the reference scenario) and the **policy** (greedy baseline or agents; for agents, the **LLM**: rules only, live, or replay of a recorded run), then press **▶ Run**. The run happens live and is saved when it reaches minute 359. The line under the bar shows **Min X / 359** and a progress bar.
 2. **⏸ Pause / ▶ Resume** stops and restarts the simulation itself, so you can read the panels at that minute. **⏭ 1 min** advances one minute and stays paused.
 3. **Speed:** 1x is one simulated minute per second; 0.5x, 2x, 4x and 10x are slower or faster. **Skip quiet time** (on by default) fast-forwards while no unit is moving and no incident is open, and drops back to your speed the moment an incident is reported or a unit sets off. Speed, pauses and skipping never change the outcome.
 4. **🚨 Spawn** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
 5. **⚙** holds the rarely used settings: incidents per scenario (4 by default; one is always the surge), **🎲 Restart with new seed** (waits at minute 0), **Past runs** (replayed from minute 0 with the same clock) and **Compare with baseline** (two maps side by side on one clock, with a KPI comparison table).
 
-The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use and **Walk-in patients (N)**. On the right: four KPI cards (criticals on time, unserved criticals, average time to care, victims delivered), units free by type, one row per hospital with an ER bar, and a feed with **Events**, **Agents** and **Negotiations** tabs, all following the clock.
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use and **Walk-in patients (N)**. A sentence above the map says what is happening this minute ("Minute 64: I07 bus fire reported, 2 paramedic ambulances on the way to I07, H1 almost full"). On the right: four KPI cards (criticals on time, unserved criticals, average time to care, victims delivered), units free by type, one row per hospital with an ER bar, and a feed with five tabs, all following the clock:
+
+- **Incidents** (default): a card per incident, least time left first, with a 5-step progress bar (reported, units sent, scene cleared, transporting, all at hospital) and where each victim is, with **on track / tight / late**. Click a card title, or an incident or unit on the map, to highlight that incident, its units and their routes.
+- **Negotiations**: each negotiation as a question ("Where should I07's 2 serious victims go?"), its outcome (agreed, escalated to the referee, no deal) and who said what, with the reasons in grey.
+- **Decisions**: what each agent saw, decided and why, and the rule's alternative; by default only where the AI differed from the rule, the guard stepped in, or the referee ruled.
+- **Hospitals**: each hospital's patients, offers and walk-ins. **Log**: the raw event timeline.
+
+All of this text is filled in from the run's log by templates (no extra AI calls); the AI's own reasons are quoted word for word. The 🔍 filter narrows the feed to one incident or agent.
 
 With live LLM calls, a minute lasts as long as the agents take to answer: the clock shows "agents deciding" meanwhile, and a whole run takes about 4 to 5 minutes whatever the speed.
 
@@ -125,11 +134,7 @@ For agents, the control bar also has an **LLM** choice: rules only (no key neede
 
 ## Dashboard v2 (Phase 4)
 
-For an agent run, the feed on the right has three tabs, all synced with the clock:
-
-- **Events:** the world's events, newest first.
-- **Agents:** a short block per agent (Incident Assessment, Dispatch, each hospital, the Arbiter): its status, pending requests, recent messages and last decision, marked as made by a rule, the LLM or the fallback rule. Hospitals also show mood, ER use and holds.
-- **Negotiations:** totals for threads, rounds, counters, deals without the Arbiter and escalations, the table of negotiation threads so far (protocol, incident, victims, rounds, counters, declines and where it stands), and the most recently active thread's messages in order.
+For an agent run, the feed's **Negotiations** and **Decisions** tabs show the agents at work (see [Launch](#launch)). Decision badges say who decided: **Rule**, **AI judgment**, **AI blocked by guard** (what the AI suggested and why the guard limited it), **Guard** (an option the guard kept from the AI) or **Fallback**. Guard steps are logged as `guard` events in `events.jsonl`; they change no decision and no metric.
 
 **Compare with baseline** (⚙, for saved agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run: two maps on one clock, and on the right a baseline vs agents table of the KPIs at that minute with units free and ER use for both. If no baseline run exists yet, a button runs it (it takes about a second), with the same placed incidents.
 

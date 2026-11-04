@@ -138,6 +138,10 @@ class AgentPolicy(HospitalProtocols, Policy):
         self.log.append({"type": "agent_decision", "agent": agent, "kind": kind, "decided_by": decided_by,
                          "reason": reason, **summary})
 
+    def guarded(self, rule: str, agent: str, why: str, **details) -> None:
+        """A guard step (DESIGN 12.8), logged for the dashboard; it changes no decision and no metric."""
+        self.log.append({"type": "guard", "rule": rule, "agent": agent, "why": why, **details})
+
     def act(self, *actions, not_before: int | None = None) -> None:
         for a in actions:
             if isinstance(a, ProposedAction):
@@ -175,6 +179,11 @@ class AgentPolicy(HospitalProtocols, Policy):
         scope = IncidentScope(self.view)
         rule = self.ia.rule_report(scope, iid).units_needed.model_dump()
         report = self.ia.assess(scope, iid)
+        if self.ia.blocked:
+            b = self.ia.blocked
+            self.guarded("G2", "ia", f"at most {b['allowed']} extra ALS per incident", incident=iid,
+                         suggested=f"{b['suggested']} extra ALS", allowed=f"{b['allowed']} extra ALS",
+                         ai_reason=b["ai_reason"])
         self.extras[iid] = report
         self.extra_units[iid] = {k: v - rule[k] for k, v in report.units_needed.model_dump().items()}
         self.sent_needs[iid] = report.units_needed.model_dump()
@@ -380,6 +389,9 @@ class AgentPolicy(HospitalProtocols, Policy):
                                         AdmissionRequest.model_validate(m.proposed_action),
                                         promised=self._promised_elsewhere(m.recipient),
                                         transfer_ready=self._transfer_ready(m.recipient, m.thread_id))
+        if getattr(agent, "withheld", False):
+            self.guarded("G1", m.recipient, self._transfer_block(m.recipient, m.thread_id), thread=m.thread_id,
+                         incident=m.incident_id, withheld="after transfer")
         for a in offer.proposed_actions:
             if a.action == "release_patient":
                 self.promised.setdefault(m.recipient, {})[a.victim] = (m.thread_id, self.t + PROMISE_MINUTES)
@@ -402,10 +414,16 @@ class AgentPolicy(HospitalProtocols, Policy):
     def _transfer_ready(self, hospital: str, thread: str) -> bool:
         """Guard (DESIGN 4.3 rung 4): "after transfer" only if a transfer could start now, and never again
         in a negotiation where one did not happen."""
-        if not self.guard:
-            return True
-        return (self.cooldown.get(("transfer", hospital), -1) <= self.t and not self.pending_reserve.get(hospital)
-                and thread not in self.failed_conditional)
+        return not self.guard or self._transfer_block(hospital, thread) is None
+
+    def _transfer_block(self, hospital: str, thread: str) -> str | None:
+        if self.cooldown.get(("transfer", hospital), -1) > self.t:
+            return "a transfer was tried here in the last 10 minutes, so another cannot start now"
+        if self.pending_reserve.get(hospital):
+            return "another conditional award is already waiting for a transfer here"
+        if thread in self.failed_conditional:
+            return "a transfer already failed in this negotiation"
+        return None
 
     def _promised_elsewhere(self, hospital: str) -> frozenset[str]:
         return frozenset(p for p, (_, until) in self.promised.get(hospital, {}).items() if until >= self.t)
@@ -426,6 +444,9 @@ class AgentPolicy(HospitalProtocols, Policy):
         req = self._request(load)
         offers = [load.offers[h] for h in sorted(load.offers)]
         d = self.dispatch.award(DispatchScope(self.view), req, offers)
+        for b in self.dispatch.blocked:
+            self.guarded("G1", "dispatch", f"a conditional offer needs 15 minutes of slack; it had {b['slack']}",
+                         thread=load.thread, incident=load.incident, victim=b["victim"], hospital=b["hospital"])
         self.decision("dispatch", "award", d.decided_by, d.reason, thread=load.thread,
                       awards=[a.model_dump() for a in d.awards], escalate=d.escalate)
         lead = load.victims[0]

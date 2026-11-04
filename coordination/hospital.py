@@ -50,6 +50,7 @@ class HospitalAgent:
         self.id = hospital_id
         self.llm = llm
         self.negotiate = negotiate
+        self.withheld = False   # the guard kept "after transfer" out of the last offer's options, for the log
 
     # ----- admission -----
 
@@ -58,6 +59,7 @@ class HospitalAgent:
         """`promised`: ready-for-release patients this hospital already offered to release in another
         open offer; each is promised once (DESIGN 4.3). `transfer_ready`: a transfer could start now,
         so an "after transfer" offer can be kept (the guard, DESIGN 12.8)."""
+        self.withheld = False
         mood = scope.mood()
         caps = scope.me["capabilities"]
         treatable = by_urgency([v for v in req.victims if v.care_need in caps])
@@ -106,6 +108,8 @@ class HospitalAgent:
                 opts["release_then_accept"] = self._offer(mood, ids, more, full, base_decline, actions=releases)
         left = [i for i in ids if i not in now]
         transferable = scope.patients("transferable")
+        if transferable and scope.idle_vehicles() and left and not transfer_ready:
+            self.withheld = True
         if transferable and scope.idle_vehicles() and left and transfer_ready:
             cond = [Conditional(victims=left[: len(transferable)], after="transfer", after_minute=scope.t + TRANSFER_START_MINUTES)]
             opts["after_transfer"] = self._offer(mood, ids, now, full, base_decline, conditional=cond)

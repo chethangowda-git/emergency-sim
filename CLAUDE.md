@@ -77,6 +77,7 @@ coordination/          # Phase 2 agents (never name a package `agents`)
   messages.py          # section 6 messages and the bus with section 7 time costs
   orchestrator.py      # AgentPolicy: the minute loop, admission Contract Net, Arbiter escalation
   protocols.py         # holds, transfers, staff lending, mutual aid, swap
+  choices.py           # what the rule would have answered to a recorded LLM call (dashboard and diagnostics)
 policies/registry.py   # policy names (greedy, agents and ablations) and LLM client setup
 config/llm.json        # LLM mode and pinned model (unset until the first live run)
 config/evaluations.json  # evaluation names, the headline set, contribution steps and timeline text
@@ -93,6 +94,9 @@ dashboard/
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
   evaluation_page.py   # the Evaluation page: final-results overview, picker, results, Run a new evaluation
   eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
+  feed.py              # the Simulation page's tabbed feed: Incidents, Negotiations, Decisions, Hospitals, Log
+  explain.py           # plain-language templates: friendly names, tooltips, "now" sentence, incident and hospital cards
+  explain_agents.py    # negotiations as questions with chat bubbles, decision cards with the rule's alternative
   eval_views.py        # evaluation tables and Plotly charts
 tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
@@ -292,6 +296,7 @@ Agreed with the user after Phase 5: runs happen in real time instead of being co
 - [x] One screen at 1440 x 900: top control bar (seed, policy, LLM with replay picker, Run, Pause/Resume, Step, speed, skip quiet time, Spawn, ⚙ popover), map left, KPI cards, units, hospitals and a tabbed feed right; compare mode with two maps and a KPI table.
 - [x] Playback: 1x = one simulated minute per second (0.5x to 10x), skip quiet time (default on), 8 frames per second with fading trails; outcomes unchanged (tests).
 - [x] Evaluation page opens on the final results (headline numbers, chart, contributions, timeline), readable names, Show all evaluations, Run a new evaluation at the bottom; named evaluations' summaries committed.
+- [x] Explained without help: "what's happening now" sentence, feed tabs Incidents / Negotiations / Decisions / Hospitals / Log from templates (no LLM calls; recorded reasons verbatim), guard steps logged as `guard` events (no decision or metric changes), map clicks open cards and highlight, friendly names and tooltips, intro with a final-eval replay as default, "How to read this".
 
 ## Things not to do
 

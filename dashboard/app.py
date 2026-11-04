@@ -9,6 +9,7 @@ import os
 import secrets
 import sys
 import time
+from html import escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,7 +18,7 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from dashboard import agent_views, evaluation_page, map_view, panels, run_store, style  # noqa: E402
+from dashboard import eval_catalog, evaluation_page, explain, feed, map_view, panels, run_store, style  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
 from coordination.llm import load_llm_config  # noqa: E402
@@ -35,9 +36,8 @@ INCIDENT_CHOICES = (3, 4, 6, 12)
 DEFAULT_INCIDENTS = 4
 EVALUATED_INCIDENTS = 12  # DESIGN 3.11; the Evaluation page always uses it
 FRAME_SECONDS = 0.125     # 8 frames a second: units glide along their routes
-MAP_HEIGHT = 615
-FEED_HEIGHT = 372
-FEEDS = ("Events", "Agents", "Negotiations")
+MAP_HEIGHT = 588
+FEED_HEIGHT = 342
 
 st.set_page_config(page_title="Emergency response simulator", page_icon="🚑", layout="wide")
 
@@ -66,16 +66,6 @@ def kpis_at(key: str, minute: int, _run: dict) -> dict:
     return metrics.at_minute(_run["victims"], _run["timeline"], _run["events"], minute)
 
 
-@st.cache_resource(max_entries=8, show_spinner=False)
-def threads(key: str, n_events: int, _events: list[dict]) -> dict:
-    return agent_views.thread_index(_events)
-
-
-@st.cache_data(max_entries=2000, show_spinner=False)
-def cards_at(key: str, minute: int, _run: dict) -> list[dict]:
-    return agent_views.agent_cards(_run["events"], _run["timeline"][minute], minute)
-
-
 def is_agents(run: dict) -> bool:
     return run["config"]["policy"] != "greedy"
 
@@ -87,14 +77,14 @@ def rate() -> float:
 # ----- state: a live run, or a saved run being replayed -----
 
 def init_state() -> None:
+    """Opens on the intro (nothing playing): seed 42, agents, replaying a recorded final-evaluation run."""
+    featured = run_store.featured_replay()
     defaults = {"run_id": None, "live": None, "play_t": 0.0, "playing": False, "last_tick": time.monotonic(),
                 "speed": "1x", "seed": 42, "spawn_mode": False, "notice": None, "skip_quiet": True,
-                "n_incidents": DEFAULT_INCIDENTS, "llm_mode": "off", "compare": False, "feed": FEEDS[0]}
+                "n_incidents": DEFAULT_INCIDENTS, "policy": "agents", "llm_mode": "replay" if featured else "off",
+                "replay_from": featured, "compare": False, "feed": feed.FEEDS[0], "focus": None}
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
-    if st.session_state.run_id is None and st.session_state.live is None:
-        runs = run_store.list_runs(policies=PLAYBACK_POLICIES)
-        st.session_state.run_id = runs[0] if runs else None
 
 
 def live():
@@ -169,50 +159,80 @@ def baseline_id() -> str | None:
 
 def control_bar() -> None:
     replaying = st.session_state.get("policy", "greedy") != "greedy" and st.session_state.llm_mode == "replay"
-    widths = ([0.6, 1.0, 0.9, 1.45, 0.65, 0.85, 0.7, 0.6, 1.15, 0.75, 0.5] if replaying
-              else [0.7, 1.15, 1.0, 0.75, 0.95, 0.8, 0.65, 1.25, 0.85, 0.42])
+    widths = ([0.55, 0.95, 0.85, 1.55, 0.6, 0.8, 0.65, 0.55, 1.1, 0.7, 0.42, 0.42] if replaying
+              else [0.7, 1.15, 1.0, 0.75, 0.95, 0.8, 0.65, 1.25, 0.85, 0.42, 0.42])
     c = st.columns(widths, vertical_alignment="bottom")
     if not replaying:
         c.insert(3, st.empty())   # the recorded-run picker only takes room while replaying
-    c[0].number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed")
+    c[0].number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed", disabled=replaying,
+                      help="Picks the scenario: incidents, victims and walk-ins. A replay uses its recorded seed.")
     policy = c[1].selectbox("Policy", PLAYBACK_POLICIES, format_func=lambda p: POLICY_LABELS[p].capitalize(),
-                            key="policy")
+                            key="policy", help="Greedy baseline: nearest unit, nearest hospital, no negotiation. "
+                                               "Agents: assessment, dispatch, hospital and referee agents negotiate.")
     llm_mode, replay_from = llm_controls(c[2], c[3], policy)
     c[4].button("▶ Run", type="primary", width="stretch", on_click=run_clicked,
                 args=(policy, llm_mode, replay_from), disabled=llm_mode == "replay" and not replay_from,
-                help="Starts a live run of this seed from minute 0")
+                help="Starts the run from minute 0; it plays live and is saved at the end")
     clock_buttons(c[5], c[6])
     c[7].selectbox("Speed", list(SPEEDS), key="speed", on_change=speed_changed,
-                   help="1x = one simulated minute per second")
+                   help="1x = one simulated minute per second. Speed never changes what happens.")
     c[8].toggle("Skip quiet time", key="skip_quiet", on_change=skip_changed,
                 help="While no unit is moving and no incident is open, fast-forward; "
                      "back to the chosen speed when something happens")
     lr = live()
     c[9].button("🚨 Spawn", width="stretch", on_click=begin_spawn,
                 disabled=lr is None or st.session_state.spawn_mode or lr.view() is None,
-                help="Live runs: pauses, then click a street spot on the map to place an incident")
-    with c[10].popover("⚙", help="More settings"):
+                help="Place an incident: pauses, then click a street spot on the map")
+    with c[10].popover("⚙", help="More settings: incidents per scenario, new seed, past runs, compare"):
         settings_popover(policy, llm_mode)
+    with c[11].popover("❓", help="How to read this page"):
+        st.markdown(HOW_TO_READ)
+
+
+HOW_TO_READ = """**How to read this**
+
+1. **The map.** Ambulances drive real Boston streets: purple = paramedic ambulances (ALS, the only ones that
+   carry critical victims), blue = basic ambulances (BLS). Red circles are incidents with critical victims,
+   amber without, grey once everyone is at a hospital. Hover any marker; click one to open its card.
+2. **The incident cards** (right). Each incident shows its progress (reported → units sent → scene cleared →
+   transporting → all at hospital) and where every victim is, with **on track / tight / late** against their
+   deadline. **Negotiations** shows how hospitals were chosen, **Decisions** where the AI made a judgment call
+   and why (its own words), and where the guard stepped in.
+3. **The results** (top right): critical victims who reached care in time, those not yet served, average time
+   to care and victims delivered. The **Evaluation** page compares the policies over 20 scenarios.
+"""
 
 
 def llm_controls(mode_col, run_col, policy: str) -> tuple[str | None, str | None]:
     """Live or replay (DESIGN 13.1): rules only, live model calls (recorded), or replay a recording."""
     if policy == "greedy":
-        mode_col.selectbox("LLM", ["–"], disabled=True, key="llm_greedy")
+        mode_col.selectbox("LLM", ["–"], disabled=True, key="llm_greedy", help="The baseline uses no AI")
         return None, None
-    mode = mode_col.selectbox("LLM", list(LLM_MODES), format_func=LLM_MODES.get, key="llm_mode")
+    mode = mode_col.selectbox("LLM", list(LLM_MODES), format_func=LLM_MODES.get, key="llm_mode",
+                              help="Rules only: no AI. Live: the AI makes the judgment calls (recorded). "
+                                   "Replay: rerun a recorded run with the AI's recorded answers, exactly.")
     if mode == "live":
         cfg = load_llm_config()
         if not (cfg.get("model") and os.environ.get("OPENAI_API_KEY")):
             run_col.caption("Live needs a pinned model and OPENAI_API_KEY; using rules only.")
             return "off", None
     if mode == "replay":
-        runs = run_store.replayable_runs(policy)
+        featured = run_store.featured_replay()
+        runs = ([featured] if featured else []) + run_store.replayable_runs(policy)
         if not runs:
             run_col.caption("No recorded runs to replay yet.")
             return "replay", None
-        return "replay", run_col.selectbox("Recorded run", runs, key="replay_from")
+        if st.session_state.get("replay_from") not in runs:
+            st.session_state.replay_from = runs[0]
+        return "replay", run_col.selectbox("Recorded run", runs, key="replay_from", format_func=replay_label,
+                                           help="A run recorded with the AI; the first is from the final evaluation")
     return mode, None
+
+
+def replay_label(path: str) -> str:
+    if path == run_store.featured_replay():
+        return eval_catalog.load_catalog().get("default_replay_label", path)
+    return run_label(path)
 
 
 def run_clicked(policy: str, llm_mode: str | None, replay_from: str | None) -> None:
@@ -232,7 +252,8 @@ def clock_buttons(pause_col, step_col) -> None:
     lr = live()
     nothing = lr is None and st.session_state.run_id is None
     paused = lr.paused if lr is not None else not st.session_state.playing
-    pause_col.button("▶ Resume" if paused else "⏸ Pause", width="stretch", on_click=toggle_pause, disabled=nothing)
+    pause_col.button("▶ Resume" if paused else "⏸ Pause", width="stretch", on_click=toggle_pause, disabled=nothing,
+                     help="Stops or restarts the clock; every panel holds at the current minute")
     step_col.button("⏭ 1 min", width="stretch", on_click=step_minute, disabled=nothing or not paused,
                     help="Advance one minute, then stay paused")
 
@@ -377,7 +398,8 @@ def playback_body() -> None:
         return
     key, run, t = now
     minute = int(t)
-    st.markdown(clock_bar(run, minute), unsafe_allow_html=True)
+    st.markdown(clock_bar(run, minute) + f"<div class='now-line'>{escape(now_at(key, minute, run))}</div>",
+                unsafe_allow_html=True)
     base = baseline_id()
     left, right = st.columns([3, 2], gap="medium")
     with left:
@@ -386,7 +408,7 @@ def playback_body() -> None:
         elif st.session_state.spawn_mode and lr is not None:
             spawn_map(run, t)
         else:
-            st.pydeck_chart(map_view.build_deck(run, t, view_state(run)), height=MAP_HEIGHT, key="map")
+            main_map(run, t)
         st.markdown(map_view.legend_compact_html(), unsafe_allow_html=True)
     with right:
         if lr is not None and lr.error:
@@ -427,6 +449,26 @@ def clock_bar(run: dict, minute: int) -> str:
             f"<div class='prog'><div style='width:{pct}%'></div></div>")
 
 
+@st.cache_data(max_entries=2000, show_spinner=False)
+def now_at(key: str, minute: int, _run: dict) -> str:
+    return explain.now_sentence(_run, minute)
+
+
+def main_map(run: dict, t: float) -> None:
+    """The map; clicking an incident or a unit opens that incident's card and highlights it."""
+    focus = st.session_state.get("focus")
+    event = st.pydeck_chart(map_view.build_deck(run, t, view_state(run), focus=focus), height=MAP_HEIGHT, key="map",
+                            on_select="rerun", selection_mode="single-object")
+    objects = (event.selection.get("objects") or {}) if event else {}
+    picked = ((objects.get("incidents") or [{}])[0].get("id")
+              or (objects.get("units") or [{}])[0].get("incident"))
+    marker = repr(objects)
+    if objects and marker != st.session_state.get("map_pick"):
+        st.session_state.map_pick = marker
+        if picked:
+            st.session_state.update(focus=picked, feed="Incidents", f_incident="All")
+
+
 def side_panel(key: str, run: dict, minute: int) -> None:
     state = run["timeline"][minute]
     st.markdown(panels.kpi_cards_html(kpis_at(key, minute, run)) + panels.units_free_line(state)
@@ -434,39 +476,7 @@ def side_panel(key: str, run: dict, minute: int) -> None:
     if st.session_state.spawn_mode and live() is not None:
         spawn_form()
         return
-    feeds = FEEDS if is_agents(run) else FEEDS[:1]
-    if st.session_state.feed not in feeds:
-        st.session_state.feed = feeds[0]
-    feed = st.segmented_control("Feed", feeds, key="feed", required=True, label_visibility="collapsed") \
-        if len(feeds) > 1 else feeds[0]
-    with st.container(height=FEED_HEIGHT, border=True):
-        if feed == "Agents":
-            st.markdown("".join(agent_views.agent_card_html(c) for c in cards_at(key, minute, run)),
-                        unsafe_allow_html=True)
-        elif feed == "Negotiations":
-            negotiations(key, run, minute)
-        else:
-            st.markdown(panels.events_html(panels.event_feed(run["events"], minute, n=60), minute),
-                        unsafe_allow_html=True)
-
-
-def negotiations(key: str, run: dict, minute: int) -> None:
-    """DESIGN 13.2: negotiation totals, the threads so far and the most recently active one in detail."""
-    index = threads(key, len(run["events"]), run["events"])
-    neg = kpis_at(key, minute, run)["negotiation"]
-    shares = neg.get("decisions_by") or {}
-    st.caption(f"{neg.get('threads', 0)} threads · {neg.get('rounds', 0)} rounds · {neg.get('counters', 0)} counters · "
-               f"{neg.get('deals_without_arbiter', 0)} deals without the Arbiter · {neg.get('escalations', 0)} "
-               f"escalations · decisions by rule {shares.get('rule', 0)}%, LLM {shares.get('llm', 0)}%")
-    rows = agent_views.thread_rows(index, minute, [p for p in sorted({th["protocol"] for th in index.values()})
-                                                   if p != "Pre-alert"] or None, None)
-    if not rows:
-        st.caption("No negotiation yet at this minute.")
-        return
-    st.dataframe(rows, width="stretch", hide_index=True, height=170)
-    latest = rows[0]["Thread"]
-    st.caption(f"Latest: {latest} · {agent_views.thread_row(index[latest], minute)['Outcome']}")
-    st.dataframe(agent_views.thread_detail(index[latest], minute), width="stretch", hide_index=True, height=150)
+    feed.render(key, run, minute, is_agents(run), FEED_HEIGHT)
 
 
 def comparison_panel(key: str, run: dict, base_id: str, minute: int) -> None:
@@ -545,12 +555,25 @@ def playback() -> None:
     control_bar()
     show_notice()
     if live() is None and st.session_state.run_id is None:
-        st.info(f"Area: {load_area()['name']}. Pick a seed and press **▶ Run**.")
+        intro()
         return
     st.session_state.baseline_id = find_baseline()
     st.session_state.ticking_mode = ticking()
     fragment = st.fragment(run_every=FRAME_SECONDS if st.session_state.ticking_mode else None)(playback_body)
     fragment()
+
+
+def intro() -> None:
+    """Before a run (DESIGN 13.1): what pressing Run will show, and how to read the page."""
+    featured = run_store.featured_replay()
+    what = (f"It replays a recorded run from the final evaluation: "
+            f"<b>{escape(eval_catalog.load_catalog().get('default_replay_label', featured))}</b>, with the "
+            "AI's recorded answers, exactly as it happened." if featured and st.session_state.llm_mode == "replay"
+            else "It runs the chosen seed and policy live, from minute 0.")
+    st.markdown(f"<div class='intro'><h3>Press ▶ Run to start</h3><p>{what} Emergency calls come in across central "
+                f"Boston ({escape(load_area()['name'])}); agents send ambulances and negotiate with three "
+                "hospitals, in about 6 minutes at 1x with quiet time skipped.</p></div>", unsafe_allow_html=True)
+    st.markdown(HOW_TO_READ)
 
 
 def evaluation() -> None:

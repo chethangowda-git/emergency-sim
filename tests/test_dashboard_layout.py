@@ -26,7 +26,7 @@ def test_kpi_cards_are_the_four_headline_numbers():
 def test_units_and_hospitals_fit_one_line_each(tmp_path):
     _, minute = minute_of(tmp_path)
     line = panels.units_free_line(minute)
-    assert line.startswith("<div class='units-line'>Free now: <b>ALS</b>") and "/" in line
+    assert line.startswith("<div class='units-line'>Free now:") and "<b>Paramedic (ALS)</b>" in line and "ⓘ" in line
     h = dict(minute["hospitals"][0], er_used=4, er_slots=4, doctors=[{"patients": ["a"], "max": 1},
                                                                     {"patients": [], "max": 2}],
              patients=[{"walk_in": True}, {"walk_in": False}])

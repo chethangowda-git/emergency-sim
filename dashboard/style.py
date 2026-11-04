@@ -41,6 +41,43 @@ div[data-testid="stElementContainer"]:has(> div > div.stMarkdown style) {display
 .step {border-left: 3px solid #2a78d6; padding: 2px 10px; font-size: 0.8rem;}
 .step b {font-size: 0.9rem;}
 .step .num {font-size: 1.2rem; font-weight: 650;}
+.now-line {font-size: 0.85rem; margin: -2px 0 2px 0; opacity: 0.92; white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis;}
+.tip {cursor: help; opacity: 0.55; font-size: 0.8em;}
+.icard {border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 5px 8px; margin: -6px 0 6px 0;
+        font-size: 0.78rem;}
+.icard.done {margin-top: 0; opacity: 0.7;}
+.icard.changed {border-left: 3px solid #2a78d6;}
+.icard.focus {border-color: #ffc400; box-shadow: 0 0 0 1px #ffc400;}
+.chip {display: inline-block; font-size: 0.72rem; padding: 0 6px; border-radius: 9px; background: rgba(211,47,47,.15);}
+.desc {font-size: 0.74rem; opacity: 0.75; margin: 1px 0;}
+.steps-bar {display: flex; gap: 3px; align-items: center; margin: 3px 0;}
+.pstep {display: inline-block; width: 34px; height: 5px; border-radius: 3px; background: rgba(128,128,128,.3);}
+.pstep.on {background: #2e7d32;}
+.step-now {font-size: 0.68rem; opacity: 0.7; margin-left: 4px;}
+.vrow {font-size: 0.76rem; line-height: 1.35;}
+.sev {font-size: 0.66rem; padding: 0 4px; border-radius: 4px; background: rgba(128,128,128,.25);}
+.sev.critical {background: rgba(211,47,47,.35);}
+.st {font-size: 0.68rem; padding: 0 4px; border-radius: 4px; margin-left: 3px;}
+.st.on-track, .st.on-time {background: rgba(46,125,50,.3);} .st.tight {background: rgba(230,120,0,.35);}
+.st.late {background: rgba(198,40,40,.45);}
+.neg-link {font-size: 0.72rem; opacity: 0.8;}
+.thread {border-bottom: 1px solid rgba(128,128,128,.25); padding: 5px 0; font-size: 0.78rem;}
+.verdict {font-size: 0.68rem; padding: 0 6px; border-radius: 9px; margin-right: 4px; background: rgba(128,128,128,.3);}
+.v-agreed {background: rgba(46,125,50,.4);} .v-escalated {background: rgba(123,31,162,.45);}
+.v-no {background: rgba(198,40,40,.4);} .v-in {background: rgba(42,120,214,.35);}
+.round {font-size: 0.66rem; opacity: 0.6; margin: 3px 0 0 0; text-transform: uppercase; letter-spacing: 0.04em;}
+.bubble {margin: 2px 0 2px 8px; padding: 2px 8px; border-radius: 8px; background: rgba(128,128,128,.12);}
+.bubble.new {background: rgba(42,120,214,.18);}
+.why {font-size: 0.72rem; opacity: 0.6;}
+.dcard {border-bottom: 1px solid rgba(128,128,128,.25); padding: 5px 0; font-size: 0.78rem;}
+.badge {font-size: 0.66rem; padding: 0 6px; border-radius: 9px; cursor: help;}
+.b-rule {background: rgba(128,128,128,.35);} .b-ai {background: rgba(42,120,214,.45);}
+.b-guard {background: rgba(255,196,0,.45);} .b-fb {background: rgba(198,40,40,.4);}
+.hcard {border-bottom: 1px solid rgba(128,128,128,.25); padding: 5px 0; font-size: 0.8rem;}
+.intro {border: 1px solid rgba(42,120,214,.5); border-radius: 10px; padding: 10px 16px; margin: 8px 0;}
+.intro h3 {margin: 0 0 4px 0;}
+div[data-testid="stButton"] button[kind="tertiary"] {padding: 0; min-height: 1.4rem; font-weight: 600;}
 </style>
 """
 

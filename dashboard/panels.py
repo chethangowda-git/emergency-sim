@@ -5,6 +5,8 @@ from html import escape
 
 import pandas as pd
 
+from dashboard.explain import tip
+
 FREE = ("idle", "returning")
 KIND_NAMES = {"ALS": "ALS ambulances", "BLS": "BLS ambulances", "FIRE": "Fire teams", "RESCUE": "Rescue teams",
               "HV": "Hospital vehicles"}
@@ -53,6 +55,9 @@ def describe(e: dict) -> str:
         return f"💬 {e['sender']} → {e['recipient']}: {e['msg_type'].replace('_', ' ')}{why}"
     if k == "agent_decision":
         return f"🧠 {e['agent']} {e['kind'].replace('_', ' ')} ({e['decided_by']}): {e['reason']}"
+    if k == "guard":
+        what = e.get("suggested") or e.get("withheld") or f"conditional offer from {e.get('hospital')}"
+        return f"🛡️ guard {e['rule']} at {e['agent']}: {what} ({e['why']})"
     if k == "incident_reported":
         n = len(e["victims"])
         crit = sum(1 for v in e["victims"] if v["severity"] == "critical")
@@ -167,7 +172,8 @@ def kpi_comparison(base: dict, agents: dict) -> pd.DataFrame:
 
 # ----- compact right panel (DESIGN 13.1): KPI cards, units on one line, one row per hospital -----
 
-UNIT_SHORT = {"ALS": "ALS", "BLS": "BLS", "FIRE": "Fire", "RESCUE": "Rescue", "HV": "Vehicles"}
+UNIT_SHORT = {"ALS": "Paramedic (ALS)", "BLS": "Basic (BLS)", "FIRE": "Fire", "RESCUE": "Rescue", "HV": "Hospital vehicles"}
+KPI_TERMS = ("Criticals on time", "Unserved criticals", "Avg to care", "Delivered")
 
 
 def kpi_cards(m: dict) -> list[tuple[str, str, str]]:
@@ -181,7 +187,7 @@ def kpi_cards(m: dict) -> list[tuple[str, str, str]]:
 
 
 def kpi_cards_html(m: dict) -> str:
-    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{t}</div><div class='kpi-v'>{v}</div>"
+    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{tip(t)}</div><div class='kpi-v'>{v}</div>"
                     f"<div class='kpi-d'>{d}</div></div>" for t, v, d in kpi_cards(m))
     return f"<div class='kpis'>{cards}</div>"
 
@@ -197,7 +203,7 @@ def units_free(minute: dict) -> str:
 
 
 def units_free_line(minute: dict) -> str:
-    return f"<div class='units-line'>Free now: {units_free(minute)}</div>"
+    return f"<div class='units-line'>{tip('ALS', 'Free now:')} {units_free(minute)}</div>"
 
 
 def hospital_line(h: dict) -> dict:
@@ -213,7 +219,8 @@ def hospitals_html(minute: dict) -> str:
     rows = []
     for h in map(hospital_line, minute["hospitals"]):
         reserved = f" (+{h['reserved']})" if h["reserved"] else ""
-        rows.append(f"<div class='hosp'><span class='hosp-n'>{h['name']}</span> <span class='hosp-s'>ER {h['er']}"
+        rows.append(f"<div class='hosp'><span class='hosp-n'>{h['name']}</span> <span class='hosp-s'"
+                    f" title='ER slots in use out of the total; (+n) reserved for ambulances on the way'>ER {h['er']}"
                     f"{reserved} · doctors free {h['free_doctors']} · walk-ins {h['walk_ins']}</span>"
                     f"<div class='bar'><div class='fill {h['level']}' style='width:{h['load_pct']}%'></div></div></div>")
     return "".join(rows)

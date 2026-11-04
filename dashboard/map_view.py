@@ -133,7 +133,7 @@ def incident_rows(minute: dict) -> list[dict]:
         crit = any(v["original_severity"] == "critical" for v in open_v)
         color = INCIDENT_RED if crit else INCIDENT_AMBER if open_v else INCIDENT_DONE
         waiting = sum(1 for v in inc["victims"] if v["status"] in ("waiting", "assigned"))
-        rows.append({"lon": inc["lon"], "lat": inc["lat"], "color": color,
+        rows.append({"id": inc["id"], "lon": inc["lon"], "lat": inc["lat"], "color": color,
                      "radius": 50 + 25 * len(inc["victims"]),
                      "count": str(waiting) if waiting else "",
                      "label": f"{inc['id']} {inc['type'].replace('_', ' ')}: {inc['description']}\n"
@@ -169,7 +169,8 @@ def unit_rows(units: list[dict], offsets: dict[str, list[int]]) -> list[dict]:
         style = UNIT_STYLE[u["kind"]]
         job = u["incident"] or u["hospital"]
         alpha = IDLE_ALPHA if u["state"] in FREE_STATES else 255
-        rows.append({"lon": u["lon"], "lat": u["lat"], "badge": unit_badge_text(u),
+        rows.append({"id": u["id"], "incident": u["incident"], "lon": u["lon"], "lat": u["lat"],
+                     "badge": unit_badge_text(u),
                      "bg": style["rgb"] + [alpha], "fg": [255, 255, 255, alpha],
                      "offset": offsets[u["id"]],
                      "label": f"{u['id']}: {style['label']}\n{u['state'].replace('_', ' ')}"
@@ -209,7 +210,21 @@ def spawn_layers(points: list[dict], picked: dict | None) -> list[pdk.Layer]:
     return layers
 
 
-def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = ()) -> pdk.Deck:
+def focus_layers(units: list[dict], incidents: list[dict], focus: str | None) -> list[pdk.Layer]:
+    """Highlight one incident with its units and their routes (a card or map click chose it)."""
+    if not focus:
+        return []
+    mine = [u for u in units if u["incident"] == focus or any(v.startswith(focus + "-") for v in u["victims"])]
+    spots = [r for r in incidents if r["id"] == focus] + [{"lon": u["lon"], "lat": u["lat"]} for u in mine]
+    routes = [{"path": [[p[1], p[0]] for p in u["path"]]} for u in mine if u["path"]]
+    return [pdk.Layer("PathLayer", routes, id="focus-routes", get_path="path", get_color=[255, 196, 0, 200],
+                      width_min_pixels=7),
+            pdk.Layer("ScatterplotLayer", spots, id="focus", get_position=["lon", "lat"], get_fill_color=[255, 196, 0, 40],
+                      get_line_color=[255, 196, 0, 255], stroked=True, line_width_min_pixels=3, get_radius=90,
+                      radius_min_pixels=16, radius_max_pixels=30)]
+
+
+def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = (), focus: str | None = None) -> pdk.Deck:
     minute = run["timeline"][min(int(t), len(run["timeline"]) - 1)]
     units = units_at(run, t)
     incidents = incident_rows(minute)
@@ -220,6 +235,7 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = ()) -> 
              for u in units if u["path"] for piece in dashed(u["path"])]
     trails = [{**u["trail"], "color": UNIT_STYLE[u["kind"]]["rgb"]} for u in units if u.get("trail")]
     layers = [
+        *focus_layers(units, incidents, focus),
         pdk.Layer("PathLayer", paths, id="routes", get_path="path", get_color="color",
                   width_min_pixels=3, width_max_pixels=4),
         pdk.Layer("TripsLayer", trails, id="trails", get_path="path", get_timestamps="times", get_color="color",
