@@ -135,3 +135,23 @@ def per_seed_bars(summary: dict, policy: str, mode: str = "dark") -> go.Figure:
     fig = _layout(fig, mode, 90 + 26 * len(seeds), "Criticals on time, %")
     fig.update_layout(margin={"t": 30})
     return fig
+
+
+def headline_bars(items: list[dict], mode: str = "dark") -> go.Figure:
+    """The overview chart: criticals on time for the headline policies, the focus one in the accent."""
+    fig = go.Figure(go.Bar(
+        y=[i["label"] for i in items], x=[i["mean"] for i in items], orientation="h",
+        marker={"color": [ACCENT[mode] if i.get("focus") else MUTED for i in items], "cornerradius": 4},
+        error_x={"type": "data", "array": [i["sd"] for i in items], "color": INK[mode], "thickness": 1, "width": 4},
+        text=[f"{i['mean']}%" for i in items], textposition="inside", insidetextanchor="start",
+        textfont={"color": "#ffffff"}, customdata=[[i["sd"], i["n"]] for i in items],
+        hovertemplate="%{y}<br>%{x}% on time (mean)<br>± %{customdata[0]} sd over %{customdata[1]} seeds"
+                      "<extra></extra>"))
+    return _layout(fig, mode, 50 + 46 * len(items), "Criticals on time, % (mean of seeds 1-20, ±1 sd)")
+
+
+def contributions_table(rows: list[dict]) -> pd.DataFrame:
+    """What each part contributes: the main chain, then the alternatives against full rules-only agents."""
+    out = [{"Step": r["label"], "Criticals on time": f"{r['mean']}%",
+            "Change": "" if r["change"] is None else f"{r['change']:+.1f} pts"} for r in rows]
+    return pd.DataFrame(out).set_index("Step")

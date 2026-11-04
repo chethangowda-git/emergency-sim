@@ -78,15 +78,15 @@ def run_and_save(seed: int, policy: str, progress_cb: Callable[[int, int], None]
 
 
 def start_live(seed: int, policy: str, *, paused: bool, rate: float, roads=None, llm_mode: str | None = None,
-               replay_from: str | None = None, n_incidents: int | None = None):
+               replay_from: str | None = None, n_incidents: int | None = None, skip_quiet: bool = False):
     """A live run (DESIGN 13.3), already started in the background; saved under runs/ when it finishes."""
     from sim.live import LiveRun
 
     cfg, spawns = scenario_settings(n_incidents, replay_from)
     extra = {} if policy == "greedy" else {"llm_mode": llm_mode,
                                             "replay_from": RUNS_DIR / replay_from if replay_from else None}
-    return LiveRun(seed, policy, rate=rate, paused=paused, runs_dir=RUNS_DIR, cfg=cfg, roads=roads,
-                   spawns=spawns, **extra).start()
+    return LiveRun(seed, policy, rate=rate, paused=paused, skip_quiet=skip_quiet, runs_dir=RUNS_DIR, cfg=cfg,
+                   roads=roads, spawns=spawns, **extra).start()
 
 
 def incidents_of(run_id: str, runs_dir: Path = RUNS_DIR) -> int:

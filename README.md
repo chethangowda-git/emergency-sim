@@ -6,7 +6,7 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 
 ## Results
 
-**Final evaluation · seeds 1 to 20 · 12 incidents per scenario · real fire-station bases** (tag `final-eval`; `runs/evals/eval-010` to `eval-012`). Every policy gets the same incidents, walk-ins and resources. Run once on the current code, with no tuning afterwards. The LLM is `gpt-4o-mini-2024-07-18` at temperature 0.
+**Final evaluation · seeds 1 to 20 · 12 incidents per scenario · real fire-station bases** (tag `final-eval`; `runs/evals/eval-010` to `eval-013`, whose summaries are committed). Every policy gets the same incidents, walk-ins and resources. Run once on the current code, with no tuning afterwards. The LLM is `gpt-4o-mini-2024-07-18` at temperature 0.
 
 > With the LLM and the rule guard, the multi-agent system got **85.7%** of critical victims to care on time versus **39.6%** for the greedy baseline, winning on **all 20 seeds**. The same agents with rules only got 84.6%, and with the LLM but no guard 79.2%.
 
@@ -25,11 +25,26 @@ The design is in [`docs/DESIGN.md`](docs/DESIGN.md) (the source of truth). All f
 
 Values are means over the 20 seeds (repeats averaged per seed first); ± is the standard deviation across seeds. A seed counts as won when the policy gets strictly more criticals to care on time. Fallbacks are model answers that did not fit the options; none came from API errors (DESIGN 12.7). Three randomly chosen guarded runs were rebuilt from their recorded calls: metrics, scenario and every LLM call matched, and two rebuilds were byte-identical on all files.
 
+**What each part contributes** (rules only unless marked, final code; the ablations are `eval-013`):
+
+| Step | Criticals on time | Change |
+|---|---|---|
+| Greedy baseline | 39.6% | |
+| + coordination (incident assessment, dispatch by urgency, admissions; no negotiation) | 70.8% | +31.2 pts |
+| + hospital negotiation (full agents, rules only) | 84.6% | +13.8 pts |
+| + LLM judgment with the guard | **85.7%** | +1.0 pts |
+| *Alternatives, against full rules-only agents:* | | |
+| Without the Arbiter | 88.8% | +4.1 pts |
+| Rule hospitals instead of hospital agents | 70.8% | −13.8 pts |
+| LLM judgment without the guard | 79.2% | −5.4 pts |
+
+Coordination itself gives the largest gain, and hospital negotiation the next. The Arbiter still costs about 4 points in rules-only mode (88.8% without it); this was not investigated, to avoid tuning on the evaluation seeds. Rule hospitals and no negotiation now give the same result (both 70.8%).
+
 **What it means.** Coordination by agents more than doubles criticals on time over the greedy baseline, with or without the LLM. With the guard, the LLM is now slightly ahead of rules only (+1.0 point; 8 wins, 8 ties, 4 losses), which is within the variation between seeds; it is no longer a cost. Without the guard it is 5.4 points behind rules only. The guard (`llm_guard` in `config/llm.json`, on by default) is the "LLM proposes, rules guard" step: the LLM still makes its choices, but rules check its conditional "after transfer" offers and its extra-unit requests (DESIGN 12.8).
 
 ### How we got here
 
-1. **v1, rules only** (`eval-007`, tag `v1-live-eval`): agents 85.0% vs greedy 39.6%, after fixing how hospitals promise ready-for-release patients ([docs/FINDINGS.md](docs/FINDINGS.md)). Ablations on that code: no negotiation 70.8%, rule hospitals 69.4%, no Arbiter 88.4%; so coordination gives the first +31 points, hospital negotiation the next +19, and the Arbiter cost 3.5 points in rules-only mode (not investigated, to avoid tuning on these seeds). The ablations were not rerun for the final evaluation.
+1. **v1, rules only** (`eval-007`, tag `v1-live-eval`): agents 85.0% vs greedy 39.6%, after fixing how hospitals promise ready-for-release patients ([docs/FINDINGS.md](docs/FINDINGS.md)).
 2. **v1, live LLM** (`eval-008`, 3 repeats, replayed exactly as `eval-009`): **68.6%**, 16.4 points below rules only and losing to it on 16 of 20 seeds. The model chose the conditional "after transfer" offer in 87% of hospital admissions and asked for extra units in 61% of incident assessments.
 3. **Diagnosis on development seeds 101 to 120 only** (`runs/dev-evals/`, `tools/diagnostics/llm_losses.py`): the loss came mostly from coordination bugs that only the LLM's choices reached, because rules never make conditional offers:
    - **B1:** a hospital kept one pending conditional award, so a second one overwrote the first, which never got an answer; ambulances (and on a 3-ALS fleet, sometimes all of them) waited on scene for the rest of the run.
@@ -46,7 +61,7 @@ Values are means over the 20 seeds (repeats averaged per seed first); ± is the 
 - The unguarded evaluation ran 1 repeat to keep the cost down, so its per-seed numbers include model variation (the guarded spread across repeats is 1.6 points).
 - The world is a simplified one (section [Assumptions](#assumptions-and-simplifications)): no traffic, no deterioration, approximate times and fictional hospital capacities.
 
-To reproduce: `python -m cli eval --seeds 1-20 --policies greedy agents` (rules only, deterministic, about 30 seconds; or the **Evaluation** page), and replay the live evaluations without a key: `python -m cli eval --seeds 1-20 --policies greedy agents --llm replay --from eval-011 --repeats 3` (and `--from eval-012 --repeats 1`). `python -m tools.diagnostics.final_table --rules eval-010 --guarded eval-011 --unguarded eval-012` prints the table. The v1 results are reproducible at tag `v1-live-eval`.
+To reproduce: `python -m cli eval --seeds 1-20 --policies greedy agents` and `--policies agents-nonego agents-noarb agents-rulehosp` (rules only, deterministic, about 30 seconds each; or **Run a new evaluation** on the Evaluation page), and replay the live evaluations without a key: `python -m cli eval --seeds 1-20 --policies greedy agents --llm replay --from eval-011 --repeats 3` (and `--from eval-012 --repeats 1`). `python -m tools.diagnostics.final_table --rules eval-010 --guarded eval-011 --unguarded eval-012` prints the table. The v1 results are reproducible at tag `v1-live-eval`.
 
 ## Launch
 
@@ -58,16 +73,15 @@ You only need Python 3.11 or newer installed. The first launch creates a virtual
 | Windows | Double-click `launch.bat` |
 | Linux | Run `./launch.sh` |
 
-The dashboard opens at <http://localhost:8501>. Then:
+The dashboard opens at <http://localhost:8501>, with **Simulation** and **Evaluation** at the top. Each page fits one screen (1440 × 900): the controls are in one bar along the top, the map is on the left, and the numbers are on the right.
 
-1. Pick a **seed** (42 is the reference scenario), the number of **incidents** (4 by default; one is always the surge) and the **policy** (greedy baseline or agents), then press **Run simulation**. The run happens live: the simulation advances while you watch, and it is saved when it reaches minute 359.
-2. **⏸ Pause / ▶ Resume** stops and restarts the simulation itself, so you can read the resources, events and agent messages at that minute. **⏭ Step 1 min** advances one minute and stays paused.
-3. **Speed:** 1x plays the whole 360-minute run in about 50 seconds; 0.5x, 2x and 4x are slower or faster. Speed and pauses never change the outcome.
-4. **🚨 Spawn incident** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
-5. **🎲 Restart with new seed** picks a random seed and waits at minute 0; press Resume to start.
-6. **Past runs** reopens a saved run and replays it from minute 0 with the same clock controls.
+1. Pick a **seed** (42 is the reference scenario) and the **policy** (greedy baseline or agents; for agents, the **LLM**: rules only, live, or replay of a recorded run), then press **▶ Run**. The run happens live and is saved when it reaches minute 359. The line under the bar shows **Min X / 359** and a progress bar.
+2. **⏸ Pause / ▶ Resume** stops and restarts the simulation itself, so you can read the panels at that minute. **⏭ 1 min** advances one minute and stays paused.
+3. **Speed:** 1x is one simulated minute per second; 0.5x, 2x, 4x and 10x are slower or faster. **Skip quiet time** (on by default) fast-forwards while no unit is moving and no incident is open, and drops back to your speed the moment an incident is reported or a unit sets off. Speed, pauses and skipping never change the outcome.
+4. **🚨 Spawn** pauses the run and shows the street intersections as small red dots. Click one, choose what happened and how many victims (or let the seed decide), and press **Place incident**. It is reported at the next minute, the run carries on, and it is saved with the run, so replays include it.
+5. **⚙** holds the rarely used settings: incidents per scenario (4 by default; one is always the surge), **🎲 Restart with new seed** (waits at minute 0), **Past runs** (replayed from minute 0 with the same clock) and **Compare with baseline** (two maps side by side on one clock, with a KPI comparison table).
 
-The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) driving along real streets, with their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use and **Walk-in patients (N)**, the people in the ER who came in on their own. The panels below (units, hospitals, live events, KPIs) follow the clock.
+The map shows ALS (purple) and BLS (blue) ambulances, fire teams (grey), rescue teams (brown) and lent hospital vehicles (green) gliding along real streets, with a short fading trail behind them and their remaining route dashed. Incidents appear when reported: red if they have critical victims, amber if not, grey once everyone is at a hospital. Hospitals show their ER use and **Walk-in patients (N)**. On the right: four KPI cards (criticals on time, unserved criticals, average time to care, victims delivered), units free by type, one row per hospital with an ER bar, and a feed with **Events**, **Agents** and **Negotiations** tabs, all following the clock.
 
 With live LLM calls, a minute lasts as long as the agents take to answer: the clock shows "agents deciding" meanwhile, and a whole run takes about 4 to 5 minutes whatever the speed.
 
@@ -107,27 +121,23 @@ Choose **agents** in the Policy menu to run the multi-agent system. Agents talk 
 
 Three comparison variants switch parts of the system off: **no negotiation**, **no Arbiter** and **rule hospitals**.
 
-For agents, the sidebar also has an **LLM** choice: rules only (no key needed), live (needs the model and key described above; every call is recorded), or replay of a recorded run (exact, no key). Run folders for agents also contain `messages.jsonl` and `llm_calls.jsonl`. In the Live events feed, the **Agent messages** toggle shows the messages and each agent's decisions.
+For agents, the control bar also has an **LLM** choice: rules only (no key needed), live (needs the model and key described above; every call is recorded), or replay of a recorded run (exact, no key). Run folders for agents also contain `messages.jsonl` and `llm_calls.jsonl`.
 
 ## Dashboard v2 (Phase 4)
 
-For an agent run, the bar under the map switches between three views, all synced with the clock:
+For an agent run, the feed on the right has three tabs, all synced with the clock:
 
-- **Resources & events:** units, hospitals and the live events feed.
-- **Agent activity:** a card per agent (Incident Assessment, Dispatch, each hospital, the Arbiter). Each card shows the agent's status, its pending requests, its recent messages and its last decision, marked as made by a rule, the LLM or the fallback rule. Hospital cards also show mood, ER use and holds.
-- **Negotiation history:** totals for threads, rounds, counters, deals without the Arbiter, escalations and Arbiter decisions. Below them is a table of every negotiation thread so far, with protocol, incident, victims, rounds, counters, declines and where it stands. You can filter by protocol and incident. Pick a thread, or let the view follow the latest one, to read its messages and the decisions behind them in order.
+- **Events:** the world's events, newest first.
+- **Agents:** a short block per agent (Incident Assessment, Dispatch, each hospital, the Arbiter): its status, pending requests, recent messages and last decision, marked as made by a rule, the LLM or the fallback rule. Hospitals also show mood, ER use and holds.
+- **Negotiations:** totals for threads, rounds, counters, deals without the Arbiter and escalations, the table of negotiation threads so far (protocol, incident, victims, rounds, counters, declines and where it stands), and the most recently active thread's messages in order.
 
-**Compare with baseline** (sidebar, for agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run once it is saved. You get two maps on one clock, a baseline vs agents table of the KPIs at that minute, and both runs' resources and events. If no baseline run exists yet, a button runs it (it takes about a second), with the same placed incidents.
+**Compare with baseline** (⚙, for saved agent runs) puts the greedy baseline's run of the same seed and scenario next to the agent run: two maps on one clock, and on the right a baseline vs agents table of the KPIs at that minute with units free and ER use for both. If no baseline run exists yet, a button runs it (it takes about a second), with the same placed incidents.
 
 ## Evaluation (Phase 5)
 
-Open the **Evaluation** page (top of the sidebar) and press **Run evaluation**. It runs seeds 1 to 20 with the greedy baseline, the agents and the three ablations (DESIGN 11.2 and 11.3). With rules only, that's 100 runs in about half a minute. The page shows:
+The **Evaluation** page opens on the final results: four headline numbers (greedy, rules-only agents, LLM + guard, LLM without the guard), the criticals-on-time chart next to a "What each part contributes" table, and a short "How we got here" timeline. Evaluations have readable names (`config/evaluations.json`); the picker opens any of them in full: the claim sentence, criticals on time per policy, wins, ties and losses, any variant against the baseline on every metric with a per-seed chart, and **Open in playback** for any seed and policy (the ablations are only reachable from here). Development, replayed and outdated evaluations appear with **Show all evaluations**.
 
-- the headline result as one sentence, and the main numbers against the baseline;
-- criticals on time for each policy (mean over seeds, with the spread across seeds);
-- wins, ties and losses per seed against the baseline;
-- any variant against the baseline on every metric, with a per-seed chart;
-- **Open in playback** for any seed and policy of the evaluation (the ablations are only reachable from here).
+To run a new one, open **Run a new evaluation** at the bottom: seeds 1 to 20 with the greedy baseline, the agents and the three ablations (DESIGN 11.2 and 11.3) take about half a minute with rules only.
 
 Rules-only runs are deterministic, so each seed runs once. With a live LLM, the agents run 3 times per seed. Every call is recorded, and **Replay a recorded evaluation** reproduces it exactly without a key. Evaluations are saved in `runs/evals/<eval-id>/`. Each one holds `results.jsonl` (one row per run), `summary.json`, and a small folder per run (config, scenario, metrics, LLM calls) that is enough to rebuild the full run.
 

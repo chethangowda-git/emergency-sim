@@ -513,38 +513,44 @@ Everything else (seeds, incidents, walk-ins, fleet, hospitals, simulator rules) 
 
 The dashboard is the only way the user runs anything: no command line needed. A small launcher script (double-click) starts it.
 
-### 13.1 Controls (sidebar)
+### 13.1 Screens and controls
 
-| Control | Phase | What it does |
-|---|---|---|
-| Seed | 1 | Picks the scenario |
-| Policy | 1 (greedy), 2+ (agents) | Which decision-maker to run |
-| Incidents per scenario | 4 | 3, 4, 6 or 12 (default 4 for watching; the evaluation always uses 12); one is always the surge |
-| Run simulation | 1, live in 5 | Starts a live run (section 13.3) of the seed from minute 0; saved when it reaches the last minute |
-| Restart with new seed | 1, live in 5 | Picks a random seed, writes it into the Seed box, and waits paused at minute 0 |
-| Past runs | 1 | Reopens a saved run, replayed from minute 0 with the same clock controls (greedy and agents runs; ablation runs open from the Evaluation page) |
-| Pause / Resume, Step 1 minute, speed (0.5x, 1x, 2x, 4x) | 1, live in 5 | The clock: 1x plays the 360 minutes in about 50 seconds; Step advances one minute and stays paused. No time slider |
-| Spawn incident | 5 | Live runs only: pauses, shows clickable street intersections, places an incident (section 3.3), resumes |
-| Live or replay | 3 | Agents: rules only, call the LLM (recorded) or replay a recorded run |
-| Compare with baseline | 4 | Baseline and agents side by side on the same seed and placed incidents (saved agent runs) |
-| Run evaluation | 5 | Seeds, repeats and ablations; shows the results table and charts |
+Both pages fit one screen at 1440 x 900 with no scrolling. Page navigation sits at the top; there is no sidebar.
+
+**Simulation page.** One thin control bar on top, the clock line and a thin progress bar ("Min X / 359") under it, the map on the left (about 60% of the width, full height) with a one-line legend, and the right panel. In compare mode the map area holds the two maps side by side and the right panel becomes the KPI comparison table.
+
+| Control (top bar) | What it does |
+|---|---|
+| Seed | Picks the scenario |
+| Policy | Greedy baseline or agents (ablations open from the Evaluation page) |
+| LLM | Agents: rules only, live LLM (recorded), or replay with a picker of recorded runs |
+| ▶ Run | Starts a live run (section 13.3) of the seed from minute 0; saved when it reaches the last minute |
+| Pause / Resume, ⏭ 1 min | The clock: Step advances one minute and stays paused. No time slider |
+| Speed | 0.5x, 1x, 2x, 4x, 10x; **1x = one simulated minute per real second** (default) |
+| Skip quiet time | On by default: while no unit is moving and no incident is open, the clock fast-forwards (about 30 simulated minutes per second, shown as "skipping quiet time") and returns to the chosen speed when an incident is reported or a unit starts moving |
+| 🚨 Spawn | Live runs only: pauses, shows clickable street intersections, places an incident (section 3.3), resumes |
+| ⚙ (popover) | Incidents per scenario (3, 4, 6 or 12; default 4; the evaluation always uses 12; one is always the surge), Restart with new seed (random seed, waits paused at minute 0), Past runs (replayed from minute 0 with the same clock), Compare with baseline (saved agent runs; baseline on the same seed and placed incidents, or a button that runs it) |
+
+Speed and skipping quiet time only pace the clock; they never change a run (section 12.6).
+
+**Evaluation page.** It opens on the final results: four headline numbers (greedy, rules-only agents, LLM + guard, LLM without the guard), the criticals-on-time chart next to a "What each part contributes" table, and a short "How we got here" timeline (v1 live LLM, bug fixes B1 to B3, guards G1 and G2). Readable evaluation names, the headline set, the contribution steps and the timeline text come from `config/evaluations.json`; every number is read from the evaluations' summaries. A picker opens any named evaluation in full (its tables, per-seed chart and "open a seed in playback"); development, replayed and outdated evaluations are listed only with **Show all evaluations**. Seeds, agent variants, LLM mode and **Run evaluation** sit in a collapsed "Run a new evaluation" section at the bottom.
 
 ### 13.2 Panels
 
-| Panel | Phase | Contents |
-|---|---|---|
-| Map | 1 | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without) sized by victims; units move smoothly along streets (ALS, BLS, teams, hospital vehicles in distinct styles) with their remaining route dashed; hospitals as markers showing ER use and "Walk-in patients (N)", the walk-ins in the ER at that minute |
-| Resources | 1 | Units free and busy by type; per hospital: ER, ward, doctors, nurses (and holds and mood from Phase 2) |
-| Live events | 1 | Scrolling feed of events at the current minute |
-| KPIs | 1 | Metrics from section 11, updating with the clock |
-| Agent activity | 4 | Each agent's status, recent messages, pending requests, last decision (rule or LLM) |
-| Negotiation history | 4 | Threads with rounds, offers, counters, awards, declines with reasons, Arbiter decisions |
+| Panel | Contents |
+|---|---|
+| Map | Real street basemap (free, no API key); incidents appear as circles (red with criticals, amber without) sized by victims; units glide along streets (several frames per simulated minute) with a short fading trail behind them and their remaining route dashed; ALS, BLS, teams and hospital vehicles in distinct styles; hospitals as markers showing ER use and "Walk-in patients (N)" |
+| KPI cards | Criticals on time, unserved criticals, average report-to-care time, victims delivered, updating with the clock |
+| Units | Units free by type, on one line |
+| Hospitals | One compact row per hospital with an ER bar: ER use (and reservations), free doctors, walk-ins in the ER |
+| Feed (tabs) | Events (the world's events, newest first); Agents (each agent's status, pending requests, recent messages, last decision, and hospital mood); Negotiations (negotiation totals, the threads so far and the most recently active one in detail). Fixed height, scrolls inside |
+| Compare | KPI comparison table at the minute (baseline, agents, change, better or worse), units free and ER use for both |
 
 All panels read the same run (live or saved) and stay in sync with the clock's minute. Replay never needs an API key.
 
 ### 13.3 Live runs
 
-A run happens while it is watched. A background worker (`sim/live.py`) steps the world one minute at a time, paced to the chosen speed, and publishes each minute; the dashboard draws the newest one. Its only inputs are pause, resume, one-minute steps, speed and placed incidents (section 3.3).
+A run happens while it is watched. A background worker (`sim/live.py`) steps the world one minute at a time, paced to the chosen speed (or faster while skipping quiet time), and publishes each minute; the dashboard draws the newest one, interpolating units between minutes. Its only inputs are pause, resume, one-minute steps, speed, skipping quiet time and placed incidents (section 3.3).
 
 - Pause stops the simulation itself; every panel holds at that minute. With live LLM calls, a pause takes effect once the current minute's calls finish ("pausing after this minute"), and while a minute waits on the model the clock shows "agents deciding".
 - Rules-only runs keep up with any speed; live LLM runs advance as fast as the model answers.

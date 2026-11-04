@@ -1,0 +1,514 @@
+{
+ "baseline": "greedy",
+ "policies": [
+  "greedy",
+  "agents"
+ ],
+ "seeds": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20
+ ],
+ "metrics": {
+  "greedy": {
+   "critical_on_time_pct": {
+    "mean": 39.56,
+    "sd": 17.08,
+    "min": 9.09,
+    "max": 71.43,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "unserved_criticals": {
+    "mean": 0.4,
+    "sd": 1.35,
+    "min": 0,
+    "max": 6,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "avg_report_to_care_min": {
+    "mean": 88.34,
+    "sd": 11.37,
+    "min": 67.94,
+    "max": 105.45,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "er_load_balance_pct": {
+    "mean": 53.33,
+    "sd": 24.09,
+    "min": 25.0,
+    "max": 100.0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "idle_minutes": {
+    "mean": 66.6,
+    "sd": 28.77,
+    "min": 27,
+    "max": 131,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "overload_minutes": {
+    "mean": 843.3,
+    "sd": 44.85,
+    "min": 767,
+    "max": 922,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "wasted_hold_minutes": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "victims_delivered": {
+    "mean": 26.35,
+    "sd": 4.5,
+    "min": 20,
+    "max": 34,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "deadlines_missed": {
+    "mean": 18.7,
+    "sd": 6.27,
+    "min": 9,
+    "max": 30,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "avg_response_time_min": {
+    "mean": 48.29,
+    "sd": 22.97,
+    "min": 20.33,
+    "max": 98.92,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "unit_utilization_pct": {
+    "mean": 60.27,
+    "sd": 5.09,
+    "min": 49.81,
+    "max": 67.93,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "transfers": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "reroutes": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "escalations": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "rejected_actions": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "threads": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "deals_without_arbiter": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "arbiter_decisions": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "llm_share_pct": {
+    "mean": 0.0,
+    "sd": 0.0,
+    "min": 0.0,
+    "max": 0.0,
+    "n": 20,
+    "repeat_sd": null
+   }
+  },
+  "agents": {
+   "critical_on_time_pct": {
+    "mean": 79.19,
+    "sd": 20.24,
+    "min": 31.25,
+    "max": 100.0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "unserved_criticals": {
+    "mean": 0,
+    "sd": 0.0,
+    "min": 0,
+    "max": 0,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "avg_report_to_care_min": {
+    "mean": 84.19,
+    "sd": 11.83,
+    "min": 71.29,
+    "max": 111.71,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "er_load_balance_pct": {
+    "mean": 47.08,
+    "sd": 31.1,
+    "min": 8.33,
+    "max": 116.67,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "idle_minutes": {
+    "mean": 60.55,
+    "sd": 22.14,
+    "min": 29,
+    "max": 117,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "overload_minutes": {
+    "mean": 776.1,
+    "sd": 71.22,
+    "min": 663,
+    "max": 904,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "wasted_hold_minutes": {
+    "mean": 3.75,
+    "sd": 8.25,
+    "min": 0,
+    "max": 30,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "victims_delivered": {
+    "mean": 27.35,
+    "sd": 4.37,
+    "min": 21,
+    "max": 34,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "deadlines_missed": {
+    "mean": 15.65,
+    "sd": 6.74,
+    "min": 6,
+    "max": 31,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "avg_response_time_min": {
+    "mean": 34.63,
+    "sd": 16.97,
+    "min": 10.0,
+    "max": 85.27,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "unit_utilization_pct": {
+    "mean": 60.17,
+    "sd": 6.28,
+    "min": 45.56,
+    "max": 67.96,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "transfers": {
+    "mean": 0.65,
+    "sd": 0.75,
+    "min": 0,
+    "max": 2,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "reroutes": {
+    "mean": 0.25,
+    "sd": 0.44,
+    "min": 0,
+    "max": 1,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "escalations": {
+    "mean": 15.55,
+    "sd": 4.77,
+    "min": 6,
+    "max": 22,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "rejected_actions": {
+    "mean": 31.65,
+    "sd": 10.58,
+    "min": 10,
+    "max": 53,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "threads": {
+    "mean": 171.1,
+    "sd": 27.97,
+    "min": 125,
+    "max": 248,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "deals_without_arbiter": {
+    "mean": 50.9,
+    "sd": 9.07,
+    "min": 32,
+    "max": 66,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "arbiter_decisions": {
+    "mean": 41.25,
+    "sd": 15.37,
+    "min": 14,
+    "max": 67,
+    "n": 20,
+    "repeat_sd": null
+   },
+   "llm_share_pct": {
+    "mean": 27.69,
+    "sd": 5.57,
+    "min": 16.55,
+    "max": 37.71,
+    "n": 20,
+    "repeat_sd": null
+   }
+  }
+ },
+ "versus_baseline": {
+  "agents": {
+   "critical_on_time_pct": {
+    "diff": 39.63,
+    "improvement_pct": 100.2,
+    "better": true
+   },
+   "unserved_criticals": {
+    "diff": -0.4,
+    "improvement_pct": -100.0,
+    "better": true
+   },
+   "avg_report_to_care_min": {
+    "diff": -4.15,
+    "improvement_pct": -4.7,
+    "better": true
+   },
+   "er_load_balance_pct": {
+    "diff": -6.25,
+    "improvement_pct": -11.7,
+    "better": true
+   },
+   "idle_minutes": {
+    "diff": -6.05,
+    "improvement_pct": -9.1,
+    "better": true
+   },
+   "overload_minutes": {
+    "diff": -67.2,
+    "improvement_pct": -8.0,
+    "better": true
+   },
+   "wasted_hold_minutes": {
+    "diff": 3.75,
+    "improvement_pct": null,
+    "better": false
+   },
+   "victims_delivered": {
+    "diff": 1.0,
+    "improvement_pct": 3.8,
+    "better": true
+   },
+   "deadlines_missed": {
+    "diff": -3.05,
+    "improvement_pct": -16.3,
+    "better": true
+   },
+   "avg_response_time_min": {
+    "diff": -13.66,
+    "improvement_pct": -28.3,
+    "better": true
+   },
+   "unit_utilization_pct": {
+    "diff": -0.1,
+    "improvement_pct": -0.2,
+    "better": null
+   },
+   "transfers": {
+    "diff": 0.65,
+    "improvement_pct": null,
+    "better": null
+   },
+   "reroutes": {
+    "diff": 0.25,
+    "improvement_pct": null,
+    "better": null
+   },
+   "escalations": {
+    "diff": 15.55,
+    "improvement_pct": null,
+    "better": null
+   },
+   "rejected_actions": {
+    "diff": 31.65,
+    "improvement_pct": null,
+    "better": false
+   },
+   "threads": {
+    "diff": 171.1,
+    "improvement_pct": null,
+    "better": null
+   },
+   "deals_without_arbiter": {
+    "diff": 50.9,
+    "improvement_pct": null,
+    "better": null
+   },
+   "arbiter_decisions": {
+    "diff": 41.25,
+    "improvement_pct": null,
+    "better": null
+   },
+   "llm_share_pct": {
+    "diff": 27.69,
+    "improvement_pct": null,
+    "better": null
+   },
+   "wins": {
+    "wins": 20,
+    "ties": 0,
+    "losses": 0,
+    "seeds": 20,
+    "win_rate_pct": 100.0,
+    "won_seeds": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ]
+   }
+  }
+ },
+ "per_seed": {
+  "greedy": {
+   "1": 54.55,
+   "2": 18.75,
+   "3": 40.0,
+   "4": 25.0,
+   "5": 16.67,
+   "6": 42.86,
+   "7": 50.0,
+   "8": 60.0,
+   "9": 45.45,
+   "10": 28.57,
+   "11": 45.45,
+   "12": 45.45,
+   "13": 71.43,
+   "14": 57.14,
+   "15": 23.08,
+   "16": 9.09,
+   "17": 62.5,
+   "18": 28.57,
+   "19": 25.0,
+   "20": 41.67
+  },
+  "agents": {
+   "1": 100.0,
+   "2": 31.25,
+   "3": 100.0,
+   "4": 100.0,
+   "5": 83.33,
+   "6": 71.43,
+   "7": 100.0,
+   "8": 80.0,
+   "9": 63.64,
+   "10": 100.0,
+   "11": 72.73,
+   "12": 90.91,
+   "13": 100.0,
+   "14": 85.71,
+   "15": 61.54,
+   "16": 54.55,
+   "17": 87.5,
+   "18": 42.86,
+   "19": 75.0,
+   "20": 83.33
+  }
+ },
+ "failed_runs": []
+}

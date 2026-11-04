@@ -79,17 +79,20 @@ coordination/          # Phase 2 agents (never name a package `agents`)
   protocols.py         # holds, transfers, staff lending, mutual aid, swap
 policies/registry.py   # policy names (greedy, agents and ablations) and LLM client setup
 config/llm.json        # LLM mode and pinned model (unset until the first live run)
+config/evaluations.json  # evaluation names, the headline set, contribution steps and timeline text
 evaluation/
   runner.py            # seeds x policies x repeats as light runs, results.jsonl, summary.json, rebuild for playback
   summary.py           # DESIGN 11.2: mean and spread, improvement over the baseline, win rate, the claim
 cli.py
 dashboard/
-  app.py               # layout, sidebar controls
+  app.py               # one-screen layout: top control bar, map, right panel (DESIGN 13.1)
+  style.py             # page CSS for the one-screen layout
   run_store.py         # list, load and save runs
   map_view.py          # pydeck layers
   panels.py            # resources, events, KPIs, baseline vs agents comparison
   agent_views.py       # agent activity and negotiation history, formatted from recorded messages
-  evaluation_page.py   # the Evaluation page: settings, Run evaluation, results, open a seed in playback
+  evaluation_page.py   # the Evaluation page: final-results overview, picker, results, Run a new evaluation
+  eval_catalog.py      # readable evaluation names and the overview, from config/evaluations.json
   eval_views.py        # evaluation tables and Plotly charts
 tools/diagnostics/
   negotiation_gap.py   # traces criticals lost to negotiation, on development seeds only (docs/FINDINGS.md)
@@ -278,11 +281,17 @@ Read DESIGN sections 1, 11 and 12. The evaluation seeds are 1 to 20; don't tune 
 
 Agreed with the user after Phase 5: runs happen in real time instead of being computed first and played back.
 
-- [x] `sim/live.py`: a background worker steps the world minute by minute at the chosen speed (1x = 360 minutes in about 50 seconds; 0.5x, 2x, 4x); pause, resume, step one minute; a finished live run saves byte-identical files to a headless run.
+- [x] `sim/live.py`: a background worker steps the world minute by minute at the chosen speed (1x = one simulated minute per second; 0.5x, 2x, 4x, 10x; skip quiet time); pause, resume, step one minute; a finished live run saves byte-identical files to a headless run.
 - [x] Placed incidents: pause, click a street intersection, choose type and victims (or let the seed decide); reported the next minute; saved with the run and replayable; the baseline runs against the same incidents.
 - [x] Dashboard: Run simulation starts a live run; Restart with new seed waits paused at minute 0; Past runs replay from minute 0 with the same clock; no time slider; Policy menu shows the baseline and agents (ablations stay on the Evaluation page); 4 incidents by default; "Walk-in patients (N)" on each hospital.
 - [x] Tests: live run equals headless run (with and without placed incidents), spawn rejections, pause, step and resume in the background, abandoning a run.
 - [ ] Decide later: whether the baseline runs alongside a live agents run on the same clock (for now Compare works once the run is saved).
+
+## Presentation UI (DESIGN 13)
+
+- [x] One screen at 1440 x 900: top control bar (seed, policy, LLM with replay picker, Run, Pause/Resume, Step, speed, skip quiet time, Spawn, ⚙ popover), map left, KPI cards, units, hospitals and a tabbed feed right; compare mode with two maps and a KPI table.
+- [x] Playback: 1x = one simulated minute per second (0.5x to 10x), skip quiet time (default on), 8 frames per second with fading trails; outcomes unchanged (tests).
+- [x] Evaluation page opens on the final results (headline numbers, chart, contributions, timeline), readable names, Show all evaluations, Run a new evaluation at the bottom; named evaluations' summaries committed.
 
 ## Things not to do
 

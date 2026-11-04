@@ -1,6 +1,8 @@
 """Resources, events and KPI panels. Everything here formats recorded data; no simulation."""
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 
 FREE = ("idle", "returning")
@@ -161,3 +163,75 @@ def kpi_comparison(base: dict, agents: dict) -> pd.DataFrame:
         rows.append({"Metric": name, "Baseline": fmt(b, suffix), "Agents": fmt(a, suffix), "Change": change,
                      "": verdict(b, a, better)})
     return pd.DataFrame(rows).set_index("Metric")
+
+
+# ----- compact right panel (DESIGN 13.1): KPI cards, units on one line, one row per hospital -----
+
+UNIT_SHORT = {"ALS": "ALS", "BLS": "BLS", "FIRE": "Fire", "RESCUE": "Rescue", "HV": "Vehicles"}
+
+
+def kpi_cards(m: dict) -> list[tuple[str, str, str]]:
+    """(title, value, detail) for the four headline numbers."""
+    return [
+        ("Criticals on time", fmt(m["critical_on_time_pct"], "%"), f"{m['criticals_on_time']} of {m['criticals_total']}"),
+        ("Unserved criticals", fmt(m["unserved_criticals"]), "not delivered"),
+        ("Avg to care", fmt(m["avg_report_to_care_min"], " min"), "report → hospital"),
+        ("Delivered", fmt(m["victims_delivered"]), "victims at a hospital"),
+    ]
+
+
+def kpi_cards_html(m: dict) -> str:
+    cards = "".join(f"<div class='kpi'><div class='kpi-t'>{t}</div><div class='kpi-v'>{v}</div>"
+                    f"<div class='kpi-d'>{d}</div></div>" for t, v, d in kpi_cards(m))
+    return f"<div class='kpis'>{cards}</div>"
+
+
+def units_free(minute: dict) -> str:
+    parts = []
+    for kind, short in UNIT_SHORT.items():
+        units = [u for u in minute["units"] if u["kind"] == kind]
+        if units:
+            free = sum(1 for u in units if u["state"] in FREE)
+            parts.append(f"<b>{short}</b> {free}/{len(units)}")
+    return " · ".join(parts)
+
+
+def units_free_line(minute: dict) -> str:
+    return f"<div class='units-line'>Free now: {units_free(minute)}</div>"
+
+
+def hospital_line(h: dict) -> dict:
+    free_doctors = sum(1 for d in h["doctors"] if len(d["patients"]) < d["max"])
+    walk_ins = sum(1 for p in h.get("patients", []) if p["walk_in"])
+    load = h["er_used"] / h["er_slots"] if h["er_slots"] else 0.0
+    return {"name": f"{h['id']} {h['name']}", "er": f"{h['er_used']}/{h['er_slots']}", "reserved": h["reserved"],
+            "load_pct": round(100 * min(1.0, load)), "level": "full" if load >= 1 else "busy" if load >= 0.6 else "ok",
+            "free_doctors": free_doctors, "walk_ins": walk_ins}
+
+
+def hospitals_html(minute: dict) -> str:
+    rows = []
+    for h in map(hospital_line, minute["hospitals"]):
+        reserved = f" (+{h['reserved']})" if h["reserved"] else ""
+        rows.append(f"<div class='hosp'><span class='hosp-n'>{h['name']}</span> <span class='hosp-s'>ER {h['er']}"
+                    f"{reserved} · doctors free {h['free_doctors']} · walk-ins {h['walk_ins']}</span>"
+                    f"<div class='bar'><div class='fill {h['level']}' style='width:{h['load_pct']}%'></div></div></div>")
+    return "".join(rows)
+
+
+def events_html(feed: list[tuple[int, str]], minute: int) -> str:
+    if not feed:
+        return "<div class='feed'><i>No events yet.</i></div>"
+    lines = "".join(f"<div class='ev{' now' if t == minute else ''}'><span class='ev-t'>{t}</span> {escape(text)}</div>"
+                    for t, text in feed)
+    return f"<div class='feed'>{lines}</div>"
+
+
+def compare_resources_html(base: dict, agents: dict) -> str:
+    """Compare mode: units free and each hospital's ER, baseline against agents, one line each."""
+    units = "".join(f"<div class='units-line'><b>{name}</b> free: {units_free(m)}</div>"
+                    for name, m in (("Baseline", base), ("Agents", agents)))
+    rows = "".join(f"<div class='hosp'><span class='hosp-n'>{b['name']}</span> <span class='hosp-s'>ER baseline "
+                   f"{b['er']} · agents {a['er']}</span></div>"
+                   for b, a in zip(map(hospital_line, base["hospitals"]), map(hospital_line, agents["hospitals"])))
+    return units + rows

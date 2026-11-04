@@ -209,6 +209,8 @@ Run once on the code with B1 to B3 and the guard, no tuning afterwards: `eval-01
 
 Against v1 (`eval-008`, 68.6%), the fixes alone (no guard) bring the live LLM to 79.2%, and the guard to 85.7%, slightly ahead of rules only (+1.0 point, 8 / 8 / 4). The development-seed result predicted roughly this (80.7% guarded vs 81.8% rules only there); on these seeds the guarded LLM came out a little ahead rather than a little behind, a difference within the variation between seeds. The fixes moved rules only from 85.0% to 84.6%.
 
+**Ablations on the final code** (`eval-013`, rules only, run once): no negotiation 70.8% (v1: 70.8%), rule hospitals 70.8% (v1: 69.4%), no Arbiter 88.8% (v1: 88.4%). So coordination gives +31.2 points over greedy, hospital negotiation +13.8 more (84.6%), and the guarded LLM +1.0 (85.7%). The Arbiter still costs about 4 points in rules-only mode; that was not investigated, to avoid tuning on the evaluation seeds.
+
 Three randomly chosen guarded runs (`seed18-agents-r2`, `seed9-agents-r2`, `seed15-agents-r3`) were rebuilt from their recorded calls: metrics and scenario match the evaluated run, every LLM call matches the recording, and two rebuilds are byte-identical on all 8 files. During the unguarded evaluation, four API calls hung for about 30 minutes (the client's timeout and retries); they then completed, and no run had an API error.
 
 ## Reproduce
@@ -221,6 +223,7 @@ python -m tools.diagnostics.llm_choices runs/seed42-agents-012                  
 python -m cli eval --seeds 1-20 --policies agents --llm replay --from eval-008 --repeats 3   # the live evaluation, replayed
 python -m tools.diagnostics.live_vs_rules --live eval-008 --rules eval-007        # the v1 live vs rules-only table (tag v1-live-eval)
 python -m tools.diagnostics.final_table --rules eval-010 --guarded eval-011 --unguarded eval-012   # the final table
+python -m cli eval --seeds 1-20 --policies agents-nonego agents-noarb agents-rulehosp            # the final ablations
 python -m tools.diagnostics.llm_losses --live eval-002 --estimate --evals-dir runs/dev-evals         # fixes and guards
 # the loss attribution and stuck counts above, on the code eval-002 was run with:
 git worktree add /tmp/v1 v1-live-eval && cp tools/diagnostics/llm_losses.py /tmp/v1/tools/diagnostics/

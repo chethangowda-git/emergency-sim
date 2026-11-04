@@ -115,3 +115,37 @@ def test_stopping_abandons_the_run(tmp_path):
     lr.stop()
     lr._thread.join(2)
     assert not lr._thread.is_alive() and not lr.done and not (tmp_path / "live").exists()
+
+
+def test_quiet_means_no_unit_driving_and_no_open_incident():
+    from sim.live import is_quiet
+    unit = lambda trip: {"id": "ALS1", "trip": trip}
+    inc = lambda status: {"id": "I01", "victims": [{"id": "I01-V1", "status": status}]}
+    assert is_quiet({"units": [unit(None)], "incidents": []})
+    assert is_quiet({"units": [unit(None)], "incidents": [inc("in_er")]})
+    assert not is_quiet({"units": [unit("T0001")], "incidents": []})        # a unit is driving
+    for status in ("waiting", "assigned", "in_transit", "at_door"):
+        assert not is_quiet({"units": [unit(None)], "incidents": [inc(status)]})
+
+
+def test_skipping_quiet_time_speeds_up_only_while_quiet(tmp_path):
+    from sim.live import QUIET_RATE
+    lr = live(tmp_path, rate=1.0, skip_quiet=True)
+    to_minute(lr, 1)
+    assert not lr.skipping and lr.rate == 1.0              # an incident is open from minute 0
+    while not lr.skipping:
+        lr.advance()                                       # minute 8: everyone delivered, units parked
+    assert lr.rate == QUIET_RATE
+    lr.set_skip_quiet(False)
+    assert not lr.skipping and lr.rate == 1.0
+    lr.set_skip_quiet(True)
+    while lr.skipping:
+        lr.advance()                                       # until an incident is reported or a unit moves
+    assert lr.rate == 1.0
+
+
+def test_skipping_quiet_time_never_changes_the_outcome(tmp_path):
+    lr = live(tmp_path, policy="agents", skip_quiet=True, rate=10_000).start()
+    wait_for(lambda: lr.done, 60)
+    ref = run(5, "agents", runs_dir=tmp_path / "ref", cfg=SMALL, roads=roads(), places=PLACES, llm_mode="off")
+    same_files(lr.runs_dir / lr.run_id, ref)

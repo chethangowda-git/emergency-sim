@@ -7,6 +7,7 @@ from when it is sent until it is delivered, unless its recipient has already ans
 from __future__ import annotations
 
 from collections import defaultdict
+from html import escape
 
 from coordination.tools import mood_for
 
@@ -286,3 +287,16 @@ def thread_detail(th: dict, t: int) -> list[dict]:
                          "What": label(e["kind"]), "Details": decision_details(e), "Reason": e["reason"],
                          "By": e["decided_by"], "Arrives": None})
     return rows
+
+
+# ----- compact feed (DESIGN 13.1): one short block per agent -----
+
+def agent_card_html(card: dict, recent: int = 3) -> str:
+    dot = "🟢" if card["status"] == "idle" else "🟠"
+    mood = f" · {card['mood']} · ER {card['er']} · holds {card['holds']}" if "mood" in card else ""
+    lines = "".join(f"<div class='ev'><span class='ev-t'>{r['Min']}</span> {escape(r['With'])} "
+                    f"{escape(r['Message'])}{': ' + escape(r['Reason']) if r['Reason'] else ''}</div>"
+                    for r in card["recent"][:recent])
+    pending = f" · <b>{len(card['pending'])} pending</b>" if card["pending"] else ""
+    return (f"<div class='agent'><div><b>{escape(card['name'])}</b> {dot} {escape(card['status'])}{pending}{mood}</div>"
+            f"<div class='agent-d'>Last decision: {escape(decision_text(card['decision']))}</div>{lines}</div>")

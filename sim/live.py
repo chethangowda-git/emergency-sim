@@ -15,15 +15,23 @@ from pathlib import Path
 from sim.generator import SPAWN_MAX_VICTIMS, SPAWN_TYPES, materialize, spawn_id, spawn_spec
 from sim.runner import RUNS_DIR, Prepared, Stepper, incident_victims, prepare, save
 
-MINUTES_PER_SECOND_1X = 7.2   # 1x plays the 360-minute horizon in about 50 seconds
+MINUTES_PER_SECOND_1X = 1.0   # 1x: one simulated minute per real second (DESIGN 13.3)
+QUIET_RATE = 30.0             # minutes per second while skipping quiet time
 DECIDING_AFTER = 0.3          # seconds a minute may take before the clock says the agents are deciding
+OPEN_VICTIM = ("waiting", "assigned", "in_transit", "at_door")
+
+
+def is_quiet(minute: dict) -> bool:
+    """Nothing to watch: no unit is driving and no incident has victims still to reach a hospital."""
+    return (not any(u["trip"] for u in minute["units"])
+            and not any(v["status"] in OPEN_VICTIM for inc in minute["incidents"] for v in inc["victims"]))
 
 _ids = itertools.count(1)
 
 
 class LiveRun:
     def __init__(self, seed: int, policy: str = "greedy", *, rate: float = MINUTES_PER_SECOND_1X,
-                 paused: bool = False, runs_dir: Path = RUNS_DIR, **run_kwargs) -> None:
+                 paused: bool = False, skip_quiet: bool = False, runs_dir: Path = RUNS_DIR, **run_kwargs) -> None:
         self.prep: Prepared = prepare(seed, policy, **run_kwargs)
         self.key = f"live-{next(_ids)}"
         self.runs_dir = runs_dir
@@ -33,6 +41,7 @@ class LiveRun:
         self._cond = threading.Condition()
         self._world_lock = threading.Lock()
         self._rate, self._paused, self._steps, self._stopped = rate, paused, 0, False
+        self._skip_quiet, self._quiet = skip_quiet, False
         self._due = 0.0
         self._busy_since: float | None = None
         self._published_at = 0.0
@@ -82,7 +91,7 @@ class LiveRun:
         now = time.monotonic()
         with self._cond:
             self._published_at = now
-            self._due = max(self._due + 1 / self._rate, now)
+            self._due = max(self._due + 1 / self.rate, now)
 
     def finish(self) -> str:
         with self._world_lock:
@@ -111,7 +120,14 @@ class LiveRun:
     def set_rate(self, rate: float) -> None:
         with self._cond:
             self._rate = rate
-            self._due = min(self._due, time.monotonic() + 1 / rate)
+            self._due = min(self._due, time.monotonic() + 1 / self.rate)
+            self._cond.notify_all()
+
+    def set_skip_quiet(self, on: bool) -> None:
+        """Fast-forward while nothing happens (DESIGN 13.3); like speed, it never changes the outcome."""
+        with self._cond:
+            self._skip_quiet = on
+            self._due = min(self._due, time.monotonic() + 1 / self.rate)
             self._cond.notify_all()
 
     def stop(self) -> None:
@@ -152,6 +168,15 @@ class LiveRun:
         return self._paused
 
     @property
+    def skipping(self) -> bool:
+        return self._skip_quiet and self._quiet
+
+    @property
+    def rate(self) -> float:
+        """Minutes per second right now: the chosen speed, or the quiet-time rate while skipping."""
+        return max(self._rate, QUIET_RATE) if self.skipping else self._rate
+
+    @property
     def deciding(self) -> bool:
         busy = self._busy_since
         return busy is not None and time.monotonic() - busy > DECIDING_AFTER
@@ -175,7 +200,7 @@ class LiveRun:
         minute = len(view["timeline"]) - 1
         if self._paused or self._stepper.done:
             return float(minute)
-        return minute + min(0.99, (time.monotonic() - self._published_at) * self._rate)
+        return minute + min(0.99, (time.monotonic() - self._published_at) * self.rate)
 
     def _publish(self) -> None:
         w = self.prep.world
@@ -191,3 +216,4 @@ class LiveRun:
                   "sim": w.cfg.to_dict(), "spawns": list(self.prep.spawns)}
         self._view = {"run_id": None, "config": config, "events": list(w.events), "trips_by_unit": by_unit,
                       "timeline": list(w.timeline), "victims": incident_victims(w)}
+        self._quiet = is_quiet(w.timeline[-1])

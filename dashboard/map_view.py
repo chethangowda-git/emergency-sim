@@ -29,6 +29,7 @@ LOAD_OK, LOAD_BUSY, LOAD_FULL = [46, 125, 50], [230, 120, 0], [198, 40, 40]
 FREE_STATES = ("idle",)
 BADGE_H = 20
 IDLE_ALPHA = 140
+TRAIL_MINUTES = 1.5   # a moving unit leaves a fading trail of the last 1.5 simulated minutes
 
 
 # ----- badges -----
@@ -64,8 +65,19 @@ def units_at(run: dict, t: float) -> list[dict]:
         elapsed = t - trip["depart_t"]
         lat, lon = position_on(trip["route"], elapsed)
         ahead = [p for p, c in zip(trip["points"], trip["cum"]) if c > elapsed]
-        out.append({**u, "lat": lat, "lon": lon, "path": [[lat, lon], *ahead]})
+        out.append({**u, "lat": lat, "lon": lon, "path": [[lat, lon], *ahead],
+                    "trail": trail(trip, elapsed, t, (lat, lon))})
     return out
+
+
+def trail(trip: dict, elapsed: float, t: float, here: tuple[float, float]) -> dict:
+    """The route driven in the last TRAIL_MINUTES as [lon, lat] points with their minute, ending here."""
+    behind = [(c, p) for p, c in zip(trip["points"], trip["cum"]) if c <= elapsed]
+    keep = [i for i, (c, _) in enumerate(behind) if c >= elapsed - TRAIL_MINUTES]
+    start = max(0, (keep[0] if keep else len(behind)) - 1)        # one point before, already faded out
+    pts = behind[start:]
+    return {"path": [[p[1], p[0]] for _, p in pts] + [[here[1], here[0]]],
+            "times": [trip["depart_t"] + c for c, _ in pts] + [t]}
 
 
 def _spot(lat: float, lon: float) -> tuple[float, float]:
@@ -206,9 +218,12 @@ def build_deck(run: dict, t: float, view: dict, extra: list[pdk.Layer] = ()) -> 
     rows = unit_rows(units, badge_offsets(units, landmarks))
     paths = [{"path": piece, "color": UNIT_STYLE[u["kind"]]["rgb"] + [210]}
              for u in units if u["path"] for piece in dashed(u["path"])]
+    trails = [{**u["trail"], "color": UNIT_STYLE[u["kind"]]["rgb"]} for u in units if u.get("trail")]
     layers = [
         pdk.Layer("PathLayer", paths, id="routes", get_path="path", get_color="color",
                   width_min_pixels=3, width_max_pixels=4),
+        pdk.Layer("TripsLayer", trails, id="trails", get_path="path", get_timestamps="times", get_color="color",
+                  opacity=0.85, width_min_pixels=6, rounded=True, trail_length=TRAIL_MINUTES, current_time=t),
         pdk.Layer("ScatterplotLayer", incidents, id="incidents", get_position=["lon", "lat"],
                   get_fill_color="color", get_radius="radius", radius_min_pixels=8, radius_max_pixels=22,
                   pickable=True, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=2),
@@ -255,3 +270,14 @@ def legend_html() -> str:
         f"{_badge('ALS2', UNIT_STYLE['ALS']['hex'], opacity=0.45)} faded = idle at base &nbsp;·&nbsp; "
         "dashed line = route still to drive &nbsp;·&nbsp; hover any marker for details</div>"
     )
+
+
+def legend_compact_html() -> str:
+    """One line under the map (DESIGN 13.1); hover any marker for details."""
+    units = " ".join(_badge("TV" if k == "HV" else s["short"], s["hex"]) for k, s in UNIT_STYLE.items())
+    return ("<div class='legend'>"
+            f"{units} units · {_badge('H', HOSPITAL_HEX, border=HOSPITAL_HEX)} hospital (ER "
+            "<b style='color:rgb(46,125,50)'>ok</b>/<b style='color:rgb(230,120,0)'>busy</b>/"
+            "<b style='color:rgb(198,40,40)'>full</b>) · "
+            f"{_dot(INCIDENT_RED)} criticals {_dot(INCIDENT_AMBER)} others {_dot(INCIDENT_DONE)} done · "
+            "faded = idle · dashed = route ahead · hover for details</div>")

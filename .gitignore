@@ -1,6 +1,15 @@
 runs/*
 !runs/dev-evals/
 runs/dev-evals/*/runs/
+!runs/evals/
+runs/evals/*
+!runs/evals/eval-007/
+!runs/evals/eval-008/
+!runs/evals/eval-010/
+!runs/evals/eval-011/
+!runs/evals/eval-012/
+!runs/evals/eval-013/
+runs/evals/*/runs/
 .env
 CLAUDE.local.md
 __pycache__/

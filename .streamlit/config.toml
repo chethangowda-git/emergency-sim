@@ -1,2 +1,5 @@
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "viewer"   # no Deploy button on the presentation screen

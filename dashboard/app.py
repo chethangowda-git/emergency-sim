@@ -1,4 +1,8 @@
-"""Streamlit dashboard: run simulations live, reopen and watch saved runs. Start with the launcher."""
+"""Streamlit dashboard: run simulations live, reopen and watch saved runs. Start with the launcher.
+
+One screen (DESIGN 13.1): a thin control bar on top, the map on the left, KPIs, units, hospitals and a
+tabbed feed on the right. Speed and skipping quiet time only pace the clock; they never change a run.
+"""
 from __future__ import annotations
 
 import os
@@ -13,23 +17,27 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from dashboard import agent_views, evaluation_page, map_view, panels, run_store  # noqa: E402
+from dashboard import agent_views, evaluation_page, map_view, panels, run_store, style  # noqa: E402
 from sim import metrics  # noqa: E402
 from sim.config import default_config, load_area  # noqa: E402
 from coordination.llm import load_llm_config  # noqa: E402
 from sim.generator import SPAWN_MAX_VICTIMS, SPAWN_TYPES  # noqa: E402
-from sim.live import MINUTES_PER_SECOND_1X  # noqa: E402
+from sim.live import MINUTES_PER_SECOND_1X, QUIET_RATE, is_quiet  # noqa: E402
 from sim.runner import load_roads  # noqa: E402
 
 POLICY_LABELS = {"greedy": "greedy baseline", "agents": "agents", "agents-nonego": "agents, no negotiation",
                  "agents-noarb": "agents, no Arbiter", "agents-rulehosp": "agents, rule hospitals"}
 PLAYBACK_POLICIES = ("greedy", "agents")  # the ablations live on the Evaluation page
+LLM_MODES = {"off": "Rules only", "live": "Live LLM", "replay": "Replay"}
 
-SPEEDS = {"0.5x": 0.5, "1x": 1.0, "2x": 2.0, "4x": 4.0}
+SPEEDS = {"0.5x": 0.5, "1x": 1.0, "2x": 2.0, "4x": 4.0, "10x": 10.0}
 INCIDENT_CHOICES = (3, 4, 6, 12)
 DEFAULT_INCIDENTS = 4
 EVALUATED_INCIDENTS = 12  # DESIGN 3.11; the Evaluation page always uses it
-FRAME_SECONDS = 0.25
+FRAME_SECONDS = 0.125     # 8 frames a second: units glide along their routes
+MAP_HEIGHT = 615
+FEED_HEIGHT = 372
+FEEDS = ("Events", "Agents", "Negotiations")
 
 st.set_page_config(page_title="Emergency response simulator", page_icon="🚑", layout="wide")
 
@@ -80,7 +88,8 @@ def rate() -> float:
 
 def init_state() -> None:
     defaults = {"run_id": None, "live": None, "play_t": 0.0, "playing": False, "last_tick": time.monotonic(),
-                "speed": "1x", "seed": 42, "spawn_mode": False, "notice": None}
+                "speed": "1x", "seed": 42, "spawn_mode": False, "notice": None, "skip_quiet": True,
+                "n_incidents": DEFAULT_INCIDENTS, "llm_mode": "off", "compare": False, "feed": FEEDS[0]}
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
     if st.session_state.run_id is None and st.session_state.live is None:
@@ -111,11 +120,12 @@ def start_live(seed: int, policy: str, llm_mode: str | None, replay_from: str | 
     stop_live()
     try:
         lr = run_store.start_live(seed, policy, paused=paused, rate=rate(), roads=roads(), llm_mode=llm_mode,
-                                  replay_from=replay_from, n_incidents=n_incidents)
+                                  replay_from=replay_from, n_incidents=n_incidents,
+                                  skip_quiet=st.session_state.skip_quiet)
     except ValueError as exc:
         st.session_state.notice = ("error", str(exc))
         return
-    st.session_state.update(live=lr, run_id=None, playing=False)
+    st.session_state.update(live=lr, run_id=None, playing=False, compare=False)
 
 
 def finish_live() -> None:
@@ -123,7 +133,7 @@ def finish_live() -> None:
     lr = st.session_state.live
     st.session_state.update(live=None, run_id=lr.run_id, play_t=float(lr.prep.world.cfg.horizon - 1),
                             playing=False, spawn_mode=False)
-    st.session_state.notice = ("success", f"Run finished and saved as `{lr.run_id}`.")
+    st.session_state.notice = ("success", f"Run finished and saved as {lr.run_id}.")
 
 
 def current() -> tuple[str, dict, float] | None:
@@ -142,48 +152,102 @@ def ticking() -> bool:
     return lr.ticking() if lr is not None else st.session_state.playing
 
 
-# ----- sidebar -----
-
-def sidebar() -> None:
-    sb = st.sidebar
-    sb.header("🚑 Emergency response")
-    sb.number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed")
-    st.session_state.setdefault("n_incidents", DEFAULT_INCIDENTS)
-    n_incidents = sb.selectbox("Incidents per scenario", INCIDENT_CHOICES, key="n_incidents",
-                               help=f"{EVALUATED_INCIDENTS} is the evaluated setting (DESIGN 3.11). Fewer incidents "
-                                    "are easier to follow; one of them is always the surge (6 to 10 victims).")
-    policy = sb.selectbox("Policy", PLAYBACK_POLICIES, format_func=lambda p: POLICY_LABELS[p].capitalize(),
-                          key="policy")
-    llm_mode, replay_from = (None, None) if policy == "greedy" else llm_controls(sb, policy)
-    if llm_mode == "replay" and not replay_from:
-        sb.caption("No recorded runs of this policy to replay yet.")
-    sb.button("▶ Run simulation", type="primary", width="stretch", on_click=run_clicked,
-              args=(policy, llm_mode, replay_from, n_incidents), disabled=llm_mode == "replay" and not replay_from,
-              help="Starts a live run of this seed from minute 0")
-    sb.button("🎲 Restart with new seed", width="stretch", on_click=restart_clicked,
-              args=(policy, llm_mode, n_incidents), disabled=llm_mode == "replay",
-              help="Picks a random seed and waits at minute 0; press Resume to start")
-
-    past_runs(sb)
-    compare_controls(sb)
-    sb.divider()
-    clock_controls(sb)
+def find_baseline() -> str | None:
+    """Compare with baseline (DESIGN 13.1): the greedy run of the same seed and scenario, once saved."""
+    run_id = st.session_state.run_id
+    if not st.session_state.compare or live() is not None or run_id is None or not is_agents(load(run_id)):
+        return None
+    return run_store.baseline_for(run_id)
 
 
-def run_clicked(policy: str, llm_mode: str | None, replay_from: str | None, n_incidents: int) -> None:
+def baseline_id() -> str | None:
+    """Looked up once per full rerun (it reads every saved scenario), not on every frame."""
+    return st.session_state.get("baseline_id")
+
+
+# ----- the control bar -----
+
+def control_bar() -> None:
+    replaying = st.session_state.get("policy", "greedy") != "greedy" and st.session_state.llm_mode == "replay"
+    widths = ([0.6, 1.0, 0.9, 1.45, 0.65, 0.85, 0.7, 0.6, 1.15, 0.75, 0.5] if replaying
+              else [0.7, 1.15, 1.0, 0.75, 0.95, 0.8, 0.65, 1.25, 0.85, 0.42])
+    c = st.columns(widths, vertical_alignment="bottom")
+    if not replaying:
+        c.insert(3, st.empty())   # the recorded-run picker only takes room while replaying
+    c[0].number_input("Seed", min_value=0, max_value=1_000_000, step=1, key="seed")
+    policy = c[1].selectbox("Policy", PLAYBACK_POLICIES, format_func=lambda p: POLICY_LABELS[p].capitalize(),
+                            key="policy")
+    llm_mode, replay_from = llm_controls(c[2], c[3], policy)
+    c[4].button("▶ Run", type="primary", width="stretch", on_click=run_clicked,
+                args=(policy, llm_mode, replay_from), disabled=llm_mode == "replay" and not replay_from,
+                help="Starts a live run of this seed from minute 0")
+    clock_buttons(c[5], c[6])
+    c[7].selectbox("Speed", list(SPEEDS), key="speed", on_change=speed_changed,
+                   help="1x = one simulated minute per second")
+    c[8].toggle("Skip quiet time", key="skip_quiet", on_change=skip_changed,
+                help="While no unit is moving and no incident is open, fast-forward; "
+                     "back to the chosen speed when something happens")
+    lr = live()
+    c[9].button("🚨 Spawn", width="stretch", on_click=begin_spawn,
+                disabled=lr is None or st.session_state.spawn_mode or lr.view() is None,
+                help="Live runs: pauses, then click a street spot on the map to place an incident")
+    with c[10].popover("⚙", help="More settings"):
+        settings_popover(policy, llm_mode)
+
+
+def llm_controls(mode_col, run_col, policy: str) -> tuple[str | None, str | None]:
+    """Live or replay (DESIGN 13.1): rules only, live model calls (recorded), or replay a recording."""
+    if policy == "greedy":
+        mode_col.selectbox("LLM", ["–"], disabled=True, key="llm_greedy")
+        return None, None
+    mode = mode_col.selectbox("LLM", list(LLM_MODES), format_func=LLM_MODES.get, key="llm_mode")
+    if mode == "live":
+        cfg = load_llm_config()
+        if not (cfg.get("model") and os.environ.get("OPENAI_API_KEY")):
+            run_col.caption("Live needs a pinned model and OPENAI_API_KEY; using rules only.")
+            return "off", None
+    if mode == "replay":
+        runs = run_store.replayable_runs(policy)
+        if not runs:
+            run_col.caption("No recorded runs to replay yet.")
+            return "replay", None
+        return "replay", run_col.selectbox("Recorded run", runs, key="replay_from")
+    return mode, None
+
+
+def run_clicked(policy: str, llm_mode: str | None, replay_from: str | None) -> None:
     if replay_from:
         st.session_state.seed = run_store.run_config(replay_from)["seed"]
-    start_live(int(st.session_state.seed), policy, llm_mode, replay_from, n_incidents, paused=False)
+    start_live(int(st.session_state.seed), policy, llm_mode, replay_from, st.session_state.n_incidents, paused=False)
 
 
-def restart_clicked(policy: str, llm_mode: str | None, n_incidents: int) -> None:
+def restart_clicked(policy: str, llm_mode: str | None) -> None:
     seed = secrets.randbelow(100_000)
     st.session_state.seed = seed
-    start_live(seed, policy, llm_mode, None, n_incidents, paused=True)
+    start_live(seed, policy, llm_mode, None, st.session_state.n_incidents, paused=True)
     st.session_state.notice = ("info", f"New seed {seed}: press ▶ Resume to start.")
 
 
-def past_runs(sb) -> None:
+def clock_buttons(pause_col, step_col) -> None:
+    lr = live()
+    nothing = lr is None and st.session_state.run_id is None
+    paused = lr.paused if lr is not None else not st.session_state.playing
+    pause_col.button("▶ Resume" if paused else "⏸ Pause", width="stretch", on_click=toggle_pause, disabled=nothing)
+    step_col.button("⏭ 1 min", width="stretch", on_click=step_minute, disabled=nothing or not paused,
+                    help="Advance one minute, then stay paused")
+
+
+def settings_popover(policy: str, llm_mode: str | None) -> None:
+    st.selectbox("Incidents per scenario", INCIDENT_CHOICES, key="n_incidents",
+                 help=f"{EVALUATED_INCIDENTS} is the evaluated setting (DESIGN 3.11). Fewer incidents are easier "
+                      "to follow; one of them is always the surge (6 to 10 victims).")
+    st.button("🎲 Restart with new seed", width="stretch", on_click=restart_clicked, args=(policy, llm_mode),
+              disabled=llm_mode == "replay", help="Picks a random seed and waits at minute 0; press Resume to start")
+    past_runs()
+    compare_controls()
+
+
+def past_runs() -> None:
     runs = run_store.list_runs(policies=PLAYBACK_POLICIES)
     run_id = st.session_state.run_id
     if run_id is not None and run_id not in runs:  # an ablation opened from the Evaluation page
@@ -191,7 +255,7 @@ def past_runs(sb) -> None:
     if not runs:
         return
     st.session_state.past_run = None if live() is not None else run_id
-    sb.selectbox("Past runs", runs, key="past_run", format_func=run_label, on_change=past_run_changed,
+    st.selectbox("Past runs", runs, key="past_run", format_func=run_label, on_change=past_run_changed,
                  placeholder="Live run in progress", help="Replays a saved run from minute 0")
 
 
@@ -207,60 +271,24 @@ def run_label(run_id: str) -> str:
     return run_id + tail + (f" (+{spawned} placed)" if spawned else "")
 
 
-def compare_controls(sb) -> None:
-    """Compare with baseline (DESIGN 13.1): the greedy run of the same seed and scenario, side by side."""
+def compare_controls() -> None:
     run_id = st.session_state.run_id
     if live() is not None or run_id is None or not is_agents(load(run_id)):
-        st.session_state.baseline_id = None
-        if live() is not None and live().prep.policy.name != "greedy":
-            sb.caption("Compare with baseline is available once this run finishes.")
+        st.caption("Compare with baseline: open a saved agents run (it is available once a live run finishes).")
+        st.session_state.compare = False
         return
-    on = sb.toggle("Compare with baseline", key="compare", help="Greedy baseline on the same seed, side by side")
-    base = run_store.baseline_for(run_id) if on else None
-    if on and base is None:
+    on = st.toggle("Compare with baseline", key="compare", help="Greedy baseline on the same seed, side by side")
+    if on and find_baseline() is None:
         seed = load(run_id)["config"]["seed"]
-        sb.caption(f"No baseline run for seed {seed} with these incidents yet.")
-        if sb.button(f"Run baseline for seed {seed}", width="stretch"):
+        st.caption(f"No baseline run for seed {seed} with these incidents yet.")
+        if st.button(f"Run baseline for seed {seed}", width="stretch"):
             with st.spinner("Running the greedy baseline ..."):
                 run_store.run_and_save(seed, "greedy", roads=roads(), n_incidents=run_store.incidents_of(run_id),
                                        spawns=run_store.spawns_of(run_id))
             st.rerun()
-    st.session_state.baseline_id = base
 
 
-def llm_controls(sb, policy: str) -> tuple[str, str | None]:
-    """Live or replay (DESIGN 13.1): rules only, live model calls (recorded), or replay a recording."""
-    cfg = load_llm_config()
-    live_ok = bool(cfg.get("model")) and bool(os.environ.get("OPENAI_API_KEY"))
-    modes = {"off": "Rules only (no LLM)", "live": "Live LLM (recorded)", "replay": "Replay a recorded run"}
-    mode = sb.radio("Agents' LLM", list(modes), format_func=modes.get, key="llm_mode")
-    if mode == "live" and not live_ok:
-        sb.warning("Live needs a pinned `model` in config/llm.json and OPENAI_API_KEY. Using rules only.")
-        return "off", None
-    if mode == "replay":
-        runs = run_store.replayable_runs(policy)
-        return "replay", sb.selectbox("Recorded run", runs) if runs else None
-    return mode, None
-
-
-def clock_controls(sb) -> None:
-    sb.subheader("Clock")
-    lr = live()
-    nothing = lr is None and st.session_state.run_id is None
-    paused = lr.paused if lr is not None else not st.session_state.playing
-    c1, c2 = sb.columns(2)
-    c1.button("▶ Resume" if paused else "⏸ Pause", width="stretch", on_click=toggle_pause, disabled=nothing)
-    c2.button("⏭ Step 1 min", width="stretch", on_click=step_minute, disabled=nothing or not paused,
-              help="Advance one minute, then stay paused")
-    sb.radio("Speed", list(SPEEDS), horizontal=True, key="speed", on_change=speed_changed,
-             help="1x plays the whole 360-minute run in about 50 seconds")
-    if lr is not None:
-        sb.button("🚨 Spawn incident", width="stretch", on_click=begin_spawn,
-                  disabled=st.session_state.spawn_mode or lr.view() is None,
-                  help="Pauses the run; click a street spot on the map to place an incident")
-    else:
-        sb.caption("Saved runs replay what was recorded; start a run to place incidents.")
-
+# ----- the clock -----
 
 def toggle_pause() -> None:
     lr = live()
@@ -290,6 +318,11 @@ def speed_changed() -> None:
         live().set_rate(rate())
 
 
+def skip_changed() -> None:
+    if live() is not None:
+        live().set_skip_quiet(st.session_state.skip_quiet)
+
+
 def begin_spawn() -> None:
     live().pause()
     st.session_state.update(spawn_mode=True, spawn_pick=None, spawn_round=st.session_state.get("spawn_round", 0) + 1)
@@ -297,19 +330,29 @@ def begin_spawn() -> None:
 
 def horizon_of_saved() -> int:
     run = load(st.session_state.run_id)
-    base_id = st.session_state.get("baseline_id")
-    return len(run["timeline"]) if base_id is None else min(len(run["timeline"]), len(load(base_id)["timeline"]))
+    base = baseline_id()
+    return len(run["timeline"]) if base is None else min(len(run["timeline"]), len(load(base)["timeline"]))
+
+
+def saved_quiet(minute: int) -> bool:
+    runs = [load(st.session_state.run_id)] + [load(b) for b in [baseline_id()] if b]
+    return all(is_quiet(r["timeline"][min(minute, len(r["timeline"]) - 1)]) for r in runs)
+
+
+def saved_skipping() -> bool:
+    return st.session_state.skip_quiet and saved_quiet(int(st.session_state.play_t))
 
 
 def advance_saved() -> None:
     now = time.monotonic()
     if st.session_state.playing:
         dt = min(1.0, now - st.session_state.last_tick)
-        st.session_state.play_t = min(horizon_of_saved() - 1.0, st.session_state.play_t + rate() * dt)
+        speed = max(rate(), QUIET_RATE) if saved_skipping() else rate()
+        st.session_state.play_t = min(horizon_of_saved() - 1.0, st.session_state.play_t + speed * dt)
     st.session_state.last_tick = now
 
 
-# ----- main area -----
+# ----- the screen -----
 
 def view_state(run: dict, zoom: float = 12.6) -> dict:
     """Centred on the hospitals, zoomed so all three and their labels fit the map column."""
@@ -317,9 +360,6 @@ def view_state(run: dict, zoom: float = 12.6) -> dict:
     lats, lons = [h["lat"] for h in hs], [h["lon"] for h in hs]
     return {"latitude": (min(lats) + max(lats)) / 2, "longitude": (min(lons) + max(lons)) / 2,
             "zoom": zoom, "pitch": 0}
-
-
-VIEWS = ("Resources & events", "Agent activity", "Negotiation history")
 
 
 def playback_body() -> None:
@@ -337,89 +377,142 @@ def playback_body() -> None:
         return
     key, run, t = now
     minute = int(t)
-    base_id = st.session_state.get("baseline_id")
-    if base_id is None:
-        single_map(key, run, t, minute)
-    else:
-        side_by_side(key, run, base_id, t, minute)
-
-    views = VIEWS if is_agents(run) else VIEWS[:1]
-    view = st.segmented_control("View", views, default=views[0], key="view", required=True,
-                                label_visibility="collapsed") if len(views) > 1 else views[0]
-    if view == "Agent activity":
-        agent_activity(key, run, minute)
-    elif view == "Negotiation history":
-        negotiation_history(key, run, minute)
-    elif base_id is None:
-        resources(key, run, minute, "main")
-    else:
-        left, right = st.columns(2)
-        with left:
-            st.markdown(f"#### Greedy baseline · `{base_id}`")
-            resources(base_id, load(base_id), minute, "base", stacked=True)
-        with right:
-            st.markdown(f"#### {POLICY_LABELS.get(run['config']['policy'], 'agents')} · `{st.session_state.run_id}`")
-            resources(key, run, minute, "agents", stacked=True)
-
+    st.markdown(clock_bar(run, minute), unsafe_allow_html=True)
+    base = baseline_id()
+    left, right = st.columns([3, 2], gap="medium")
+    with left:
+        if base is not None:
+            two_maps(run, load(base), t)
+        elif st.session_state.spawn_mode and lr is not None:
+            spawn_map(run, t)
+        else:
+            st.pydeck_chart(map_view.build_deck(run, t, view_state(run)), height=MAP_HEIGHT, key="map")
+        st.markdown(map_view.legend_compact_html(), unsafe_allow_html=True)
+    with right:
+        if lr is not None and lr.error:
+            st.error(lr.error)
+        if base is not None:
+            comparison_panel(key, run, base, minute)
+        else:
+            side_panel(key, run, minute)
     if lr is None and st.session_state.playing and st.session_state.play_t >= horizon_of_saved() - 1:
         st.session_state.playing = False
         st.rerun(scope="app")
 
 
-def clock_line(run: dict, minute: int) -> str:
+def clock_bar(run: dict, minute: int) -> str:
     horizon = run["config"]["sim"]["horizon"]
     lr = live()
     if lr is None:
-        state = "▶ replaying" if st.session_state.playing else "⏸ paused"
-        return f"#### Minute {minute} of {horizon - 1}\n{state} · saved run"
-    if lr.error:
-        state = "⚠️ stopped by an error"
-    elif lr.deciding:
-        state = "⏳ pausing after this minute …" if lr.paused else "🧠 agents deciding …"
+        state = ("⏩ skipping quiet time" if saved_skipping() else "▶ replaying") if st.session_state.playing \
+            else "⏸ paused"
+        where = f"saved run {st.session_state.run_id}"
     else:
-        state = "⏸ paused" if lr.paused else "🔴 live"
-    return f"#### Minute {minute} of {horizon - 1}\n{state}"
-
-
-def single_map(key: str, run: dict, t: float, minute: int) -> None:
-    left, right = st.columns([4, 1])
-    with left:
-        if st.session_state.spawn_mode and live() is not None:
-            spawn_map(run, t)
+        if lr.error:
+            state = "⚠️ stopped by an error"
+        elif lr.deciding:
+            state = "⏳ pausing after this minute …" if lr.paused else "🧠 agents deciding …"
+        elif lr.paused:
+            state = "⏸ paused"
         else:
-            st.pydeck_chart(map_view.build_deck(run, t, view_state(run)), height=560, key="map")
-        st.markdown(map_view.legend_html(), unsafe_allow_html=True)
-    with right:
-        st.markdown(clock_line(run, minute))
-        if live() is not None and live().error:
-            st.error(live().error)
-        for name, value in panels.kpis(kpis_at(key, minute, run)):
-            st.metric(name, value)
+            state = "⏩ skipping quiet time" if lr.skipping else "🔴 live"
+        where = "live run"
+    cfg = run["config"]
+    placed = len(cfg.get("spawns") or [])
+    scenario = (f"seed {cfg['seed']} · {POLICY_LABELS.get(cfg['policy'], cfg['policy'])} · "
+                f"{cfg['sim']['n_incidents']} incidents" + (f" (+{placed} placed)" if placed else ""))
+    pct = round(100 * minute / max(1, horizon - 1), 1)
+    return (f"<div class='clock'><span class='min'>Min {minute} / {horizon - 1}</span><span>{state}</span>"
+            f"<span class='tag'>{scenario} · {where}</span></div>"
+            f"<div class='prog'><div style='width:{pct}%'></div></div>")
+
+
+def side_panel(key: str, run: dict, minute: int) -> None:
+    state = run["timeline"][minute]
+    st.markdown(panels.kpi_cards_html(kpis_at(key, minute, run)) + panels.units_free_line(state)
+                + panels.hospitals_html(state), unsafe_allow_html=True)
+    if st.session_state.spawn_mode and live() is not None:
+        spawn_form()
+        return
+    feeds = FEEDS if is_agents(run) else FEEDS[:1]
+    if st.session_state.feed not in feeds:
+        st.session_state.feed = feeds[0]
+    feed = st.segmented_control("Feed", feeds, key="feed", required=True, label_visibility="collapsed") \
+        if len(feeds) > 1 else feeds[0]
+    with st.container(height=FEED_HEIGHT, border=True):
+        if feed == "Agents":
+            st.markdown("".join(agent_views.agent_card_html(c) for c in cards_at(key, minute, run)),
+                        unsafe_allow_html=True)
+        elif feed == "Negotiations":
+            negotiations(key, run, minute)
+        else:
+            st.markdown(panels.events_html(panels.event_feed(run["events"], minute, n=60), minute),
+                        unsafe_allow_html=True)
+
+
+def negotiations(key: str, run: dict, minute: int) -> None:
+    """DESIGN 13.2: negotiation totals, the threads so far and the most recently active one in detail."""
+    index = threads(key, len(run["events"]), run["events"])
+    neg = kpis_at(key, minute, run)["negotiation"]
+    shares = neg.get("decisions_by") or {}
+    st.caption(f"{neg.get('threads', 0)} threads · {neg.get('rounds', 0)} rounds · {neg.get('counters', 0)} counters · "
+               f"{neg.get('deals_without_arbiter', 0)} deals without the Arbiter · {neg.get('escalations', 0)} "
+               f"escalations · decisions by rule {shares.get('rule', 0)}%, LLM {shares.get('llm', 0)}%")
+    rows = agent_views.thread_rows(index, minute, [p for p in sorted({th["protocol"] for th in index.values()})
+                                                   if p != "Pre-alert"] or None, None)
+    if not rows:
+        st.caption("No negotiation yet at this minute.")
+        return
+    st.dataframe(rows, width="stretch", hide_index=True, height=170)
+    latest = rows[0]["Thread"]
+    st.caption(f"Latest: {latest} · {agent_views.thread_row(index[latest], minute)['Outcome']}")
+    st.dataframe(agent_views.thread_detail(index[latest], minute), width="stretch", hide_index=True, height=150)
+
+
+def comparison_panel(key: str, run: dict, base_id: str, minute: int) -> None:
+    base = load(base_id)
+    st.markdown(f"**Baseline vs agents at minute {minute}** · greedy `{base_id}` · agents "
+                f"`{st.session_state.run_id}`")
+    st.dataframe(panels.kpi_comparison(kpis_at(base_id, minute, base), kpis_at(key, minute, run)),
+                 width="stretch", height=318)
+    st.markdown(panels.compare_resources_html(base["timeline"][minute], run["timeline"][minute]),
+                unsafe_allow_html=True)
+
+
+def two_maps(run: dict, base: dict, t: float) -> None:
+    left, right = st.columns(2, gap="small")
+    left.caption("Greedy baseline")
+    left.pydeck_chart(map_view.build_deck(base, t, view_state(base, 11.7)), height=MAP_HEIGHT - 28, key="map_base")
+    right.caption(f"{POLICY_LABELS.get(run['config']['policy'], 'agents').capitalize()} · same seed")
+    right.pydeck_chart(map_view.build_deck(run, t, view_state(run, 11.7)), height=MAP_HEIGHT - 28, key="map_agents")
 
 
 def spawn_map(run: dict, t: float) -> None:
     """Place an incident: click a dot (a street intersection), choose what happened, confirm."""
     picked = st.session_state.get("spawn_pick")
     deck = map_view.build_deck(run, t, view_state(run), extra=map_view.spawn_layers(spawn_points(), picked))
-    event = st.pydeck_chart(deck, height=560, key=f"map_spawn_{st.session_state.spawn_round}",
+    event = st.pydeck_chart(deck, height=MAP_HEIGHT, key=f"map_spawn_{st.session_state.spawn_round}",
                             on_select="rerun", selection_mode="single-object")
     chosen = (event.selection.get("objects") or {}).get("spawn-points") if event else None
     if chosen:
-        picked = st.session_state.spawn_pick = chosen[0]
+        st.session_state.spawn_pick = chosen[0]
+
+
+def spawn_form() -> None:
+    picked = st.session_state.get("spawn_pick")
     with st.container(border=True):
         st.markdown("**🚨 Spawn incident** · "
                     + (f"spot chosen ({picked['lat']:.4f}, {picked['lon']:.4f})" if picked
                        else "click a red dot on the map to choose the spot"))
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        c1, c2 = st.columns([2, 1])
         kind = c1.selectbox("What happened", ["random", *SPAWN_TYPES], key="spawn_kind",
                             format_func=lambda k: "Let the seed decide" if k == "random" else k.replace("_", " "))
         n = c2.selectbox("Victims", ["random", *range(1, SPAWN_MAX_VICTIMS + 1)], key="spawn_victims",
                          format_func=lambda v: "Seed decides" if v == "random" else str(v))
-        c3.markdown("&nbsp;")
-        c4.markdown("&nbsp;")
-        if c3.button("Place incident", type="primary", width="stretch", disabled=picked is None):
+        b1, b2 = st.columns(2)
+        if b1.button("Place incident", type="primary", width="stretch", disabled=picked is None):
             place_incident(picked["node"], None if kind == "random" else kind, None if n == "random" else int(n))
-        if c4.button("Cancel", width="stretch"):
+        if b2.button("Cancel", width="stretch"):
             st.session_state.spawn_mode = False
             st.rerun(scope="app")
 
@@ -438,157 +531,33 @@ def place_incident(node: str, kind: str | None, n_victims: int | None) -> None:
     st.rerun(scope="app")
 
 
-def side_by_side(key: str, run: dict, base_id: str, t: float, minute: int) -> None:
-    base = load(base_id)
-    horizon = horizon_of_saved()
-    left, right = st.columns(2)
-    with left:
-        st.markdown(f"##### Greedy baseline · minute {minute} of {horizon - 1}")
-        st.pydeck_chart(map_view.build_deck(base, t, view_state(base, 11.9)), height=460, key="map_base")
-    with right:
-        st.markdown(f"##### {POLICY_LABELS.get(run['config']['policy'], 'agents').capitalize()} · same seed")
-        st.pydeck_chart(map_view.build_deck(run, t, view_state(run, 11.9)), height=460, key="map_agents")
-    st.markdown(map_view.legend_html(), unsafe_allow_html=True)
-    st.markdown("##### Baseline vs agents at this minute")
-    st.dataframe(panels.kpi_comparison(kpis_at(base_id, minute, base), kpis_at(key, minute, run)), width="stretch")
-
-
-def resources(key: str, run: dict, minute: int, widget_key: str, stacked: bool = False) -> None:
-    state = run["timeline"][minute]
-    if stacked:
-        st.dataframe(panels.unit_table(state), width="stretch")
-        st.dataframe(panels.hospital_table(state), width="stretch")
-        st.dataframe(panels.per_hospital_kpis(kpis_at(key, minute, run)), width="stretch")
-    else:
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.markdown("##### Units")
-            st.dataframe(panels.unit_table(state), width="stretch")
-            st.dataframe(panels.unit_states(state), width="stretch", height=250)
-        with c2:
-            st.markdown("##### Hospitals")
-            st.dataframe(panels.hospital_table(state), width="stretch")
-            st.dataframe(panels.per_hospital_kpis(kpis_at(key, minute, run)), width="stretch")
-    head, toggle = st.columns([3, 1])
-    head.markdown("##### Live events")
-    show_agents = is_agents(run) and toggle.toggle("Agent messages", value=False,
-                                                   key=f"show_agent_events_{widget_key}")
-    feed = panels.event_feed(run["events"], minute, agents=show_agents)
-    st.markdown("\n".join(f"- **{et:>3}** {'🟢 ' if et == minute else ''}{text}" for et, text in feed)
-                or "_No events yet._")
-
-
-def agent_activity(key: str, run: dict, minute: int) -> None:
-    """DESIGN 13.2: each agent's status, recent messages, pending requests and last decision."""
-    cards = cards_at(key, minute, run)
-    for row in range(0, len(cards), 2):
-        for col, card in zip(st.columns(2), cards[row:row + 2]):
-            with col.container(border=True):
-                st.markdown(f"**{card['name']}**  \n{agent_status_line(card)}")
-                st.caption(f"Last decision: {agent_views.decision_text(card['decision'])}")
-                if card["pending"]:
-                    st.markdown("Pending requests")
-                    st.dataframe(card["pending"], width="stretch", hide_index=True)
-                if card["recent"]:
-                    st.dataframe(card["recent"], width="stretch", hide_index=True, height=213,
-                                 column_order=("Min", "With", "Message", "Details", "Reason", "By"))
-                else:
-                    st.caption("No messages yet.")
-
-
-def agent_status_line(card: dict) -> str:
-    dot = "🟢" if card["status"] == "idle" else "🟠"
-    line = f"{dot} {card['status']} · {card['sent']} sent, {card['received']} received"
-    if "mood" in card:
-        line += f"  \nmood **{card['mood']}** · ER {card['er']} · holds {card['holds']}"
-    return line
-
-
-def negotiation_history(key: str, run: dict, minute: int) -> None:
-    """DESIGN 13.2: threads with rounds, offers, counters, awards, declines and Arbiter decisions."""
-    index = threads(key, len(run["events"]), run["events"])
-    neg = kpis_at(key, minute, run)["negotiation"]
-    stats = st.columns(6)
-    for col, (name, k) in zip(stats, (("Threads", "threads"), ("Rounds", "rounds"), ("Counters", "counters"),
-                                      ("Deals without Arbiter", "deals_without_arbiter"),
-                                      ("Escalations", "escalations"), ("Arbiter decisions", "arbiter_decisions"))):
-        col.metric(name, neg.get(k, 0))
-    shares = neg.get("decisions_by") or {}
-    if shares:
-        st.caption(f"Agent decisions by rule {shares.get('rule', 0)}%, LLM {shares.get('llm', 0)}%, "
-                   f"fallback {shares.get('fallback', 0)}%")
-
-    protocols = sorted({th["protocol"] for th in index.values()})
-    incidents = sorted({m["incident_id"] for th in index.values() for m in th["messages"] if m.get("incident_id")})
-    f1, f2 = st.columns([3, 1])
-    chosen = f1.multiselect("Protocols", protocols, default=[p for p in protocols if p != "Pre-alert"],
-                            key="neg_protocols")
-    incident = f2.selectbox("Incident", ["All", *incidents], key="neg_incident")
-    rows = agent_views.thread_rows(index, minute, chosen or None, None if incident == "All" else incident)
-    st.dataframe(rows, width="stretch", hide_index=True, height=280)
-
-    order = sorted(index.values(), key=lambda th: (th["messages"][0]["t"], th["id"]))
-    options = ["latest", *[th["id"] for th in order]]
-    names = {th["id"]: f"{th['id']} · {th['protocol']} · min {th['messages'][0]['t']}"
-             + (f" · {th['messages'][0]['incident_id']}" if th["messages"][0].get("incident_id") else "")
-             for th in order}
-    pick = st.selectbox("Thread", options, key="neg_thread",
-                        format_func=lambda o: "Most recently active (follows the clock)" if o == "latest" else names[o])
-    th_id = (rows[0]["Thread"] if rows else None) if pick == "latest" else pick
-    if th_id is None:
-        st.caption("No negotiation yet at this minute.")
-        return
-    detail = agent_views.thread_detail(index[th_id], minute)
-    if not detail:
-        st.info(f"{th_id} starts at minute {index[th_id]['messages'][0]['t']}.")
-        return
-    st.markdown(f"**{names[th_id]}** · {agent_views.thread_row(index[th_id], minute)['Outcome']}")
-    st.dataframe(detail, width="stretch", hide_index=True)
-
-
-def header(area: str) -> None:
-    lr = live()
-    if lr is not None:
-        run_id = None
-        cfg = lr.view()["config"] if lr.view() else {"seed": lr.prep.seed, "policy": lr.prep.policy.name,
-                                                     "sim": lr.prep.world.cfg.to_dict()}
-    else:
-        run_id = st.session_state.run_id
-        cfg = {**load(run_id)["config"], "spawns": run_store.spawns_of(run_id)}
-    placed = len(cfg.get("spawns") or [])
-    tail = f" (+{placed} placed)" if placed else ""
-    where = "🔴 live run" if run_id is None else f"`{run_id}`"
-    st.markdown(f"### {area} · seed {cfg['seed']} · {cfg['policy']} · {cfg['sim']['n_incidents']} incidents{tail} "
-                f"· {where}")
-
-
 def show_notice() -> None:
     notice = st.session_state.notice
     if notice:
         kind, text = notice
-        {"error": st.error, "success": st.success, "info": st.info}[kind](text)
+        st.toast(text, icon={"error": "⚠️", "success": "✅", "info": "ℹ️"}[kind])
         st.session_state.notice = None
 
 
 def playback() -> None:
+    style.apply()
     init_state()
-    sidebar()
-    area = load_area()["name"]
-    if live() is None and st.session_state.run_id is None:
-        st.title("Emergency response simulator")
-        show_notice()
-        st.info(f"Area: {area}. Pick a seed and press **Run simulation** in the sidebar.")
-        return
-    header(area)
+    control_bar()
     show_notice()
+    if live() is None and st.session_state.run_id is None:
+        st.info(f"Area: {load_area()['name']}. Pick a seed and press **▶ Run**.")
+        return
+    st.session_state.baseline_id = find_baseline()
     st.session_state.ticking_mode = ticking()
     fragment = st.fragment(run_every=FRAME_SECONDS if st.session_state.ticking_mode else None)(playback_body)
     fragment()
 
 
 def evaluation() -> None:
+    style.apply()
     evaluation_page.render(roads(), PLAYBACK)
 
 
 PLAYBACK = st.Page(playback, title="Simulation", icon="🗺️", default=True)
-st.navigation([PLAYBACK, st.Page(evaluation, title="Evaluation", icon="📊", url_path="evaluation")]).run()
+st.navigation([PLAYBACK, st.Page(evaluation, title="Evaluation", icon="📊", url_path="evaluation")],
+              position="top").run()

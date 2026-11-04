@@ -6,7 +6,7 @@ import os
 import streamlit as st
 
 from coordination.llm import load_llm_config
-from dashboard import eval_views
+from dashboard import eval_catalog, eval_views
 from evaluation import runner as ev
 from evaluation.summary import PRIMARY, claim
 from policies.registry import POLICY_NAMES
@@ -24,65 +24,63 @@ def theme() -> str:
     return "light" if getattr(st.context.theme, "type", "dark") == "light" else "dark"
 
 
-def settings_sidebar(roads) -> None:
-    sb = st.sidebar
-    sb.header("📊 Evaluation")
-    c1, c2 = sb.columns(2)
-    first = c1.number_input("First seed", 0, 1_000_000, 1, key="eval_first")
-    last = c2.number_input("Last seed", 0, 1_000_000, 20, key="eval_last")
-    policies = sb.multiselect("Agent variants", AGENT_POLICIES, default=AGENT_POLICIES, key="eval_policies",
-                              format_func=eval_views.label, help="The greedy baseline always runs")
-    modes = {"off": "Rules only (no LLM)", "live": "Live LLM (recorded)", "replay": "Replay a recorded evaluation"}
-    mode = sb.radio("Agents' LLM", list(modes), format_func=modes.get, key="eval_llm")
-    repeats, replay_from = 1, None
-    if mode == "live":
-        cfg = load_llm_config()
-        if not (cfg.get("model") and os.environ.get("OPENAI_API_KEY")):
-            sb.warning("Live needs a pinned `model` in config/llm.json and OPENAI_API_KEY.")
-            mode = None
-        repeats = sb.number_input("Repeats per seed", 1, 5, ev.LIVE_REPEATS, key="eval_repeats")
-    elif mode == "replay":
-        recorded = [e for e in ev.list_evaluations() if load(e)["settings"]["llm_mode"] in ("live", "replay")]
-        replay_from = sb.selectbox("Recorded evaluation", recorded) if recorded else None
-        if replay_from:
-            s = load(replay_from)["settings"]
-            first, last, policies, repeats = s["seeds"][0], s["seeds"][-1], s["policies"][1:], s["repeats"]
-            sb.caption(f"Replays seeds {first}–{last}, {repeats} repeats, exactly as recorded.")
-        else:
-            sb.caption("No live evaluation has been recorded yet.")
-            mode = None
+def run_section(roads) -> None:
+    """Run a new evaluation (DESIGN 13.1), collapsed at the bottom of the page."""
+    with st.expander("Run a new evaluation"):
+        c1, c2, c3, c4 = st.columns([1, 1, 3, 2])
+        first = c1.number_input("First seed", 0, 1_000_000, 1, key="eval_first")
+        last = c2.number_input("Last seed", 0, 1_000_000, 20, key="eval_last")
+        policies = c3.multiselect("Agent variants", AGENT_POLICIES, default=AGENT_POLICIES, key="eval_policies",
+                                  format_func=eval_views.label, help="The greedy baseline always runs")
+        modes = {"off": "Rules only (no LLM)", "live": "Live LLM (recorded)", "replay": "Replay a recorded evaluation"}
+        mode = c4.radio("Agents' LLM", list(modes), format_func=modes.get, key="eval_llm", horizontal=True)
+        repeats, replay_from = 1, None
+        if mode == "live":
+            cfg = load_llm_config()
+            if not (cfg.get("model") and os.environ.get("OPENAI_API_KEY")):
+                st.warning("Live needs a pinned `model` in config/llm.json and OPENAI_API_KEY.")
+                mode = None
+            repeats = st.number_input("Repeats per seed", 1, 5, ev.LIVE_REPEATS, key="eval_repeats")
+        elif mode == "replay":
+            recorded = [e for e in ev.list_evaluations() if load(e)["settings"]["llm_mode"] in ("live", "replay")]
+            replay_from = st.selectbox("Recorded evaluation", recorded, format_func=name_of) if recorded else None
+            if replay_from:
+                s = load(replay_from)["settings"]
+                first, last, policies, repeats = s["seeds"][0], s["seeds"][-1], s["policies"][1:], s["repeats"]
+                st.caption(f"Replays seeds {first}–{last}, {repeats} repeats, exactly as recorded.")
+            else:
+                st.caption("No live evaluation has been recorded yet.")
+                mode = None
+        ready = mode is not None and last >= first and policies
+        settings = None
+        if ready:
+            settings = ev.EvalSettings(seeds=tuple(range(int(first), int(last) + 1)), policies=tuple(policies),
+                                       llm_mode=mode, repeats=int(repeats), replay_from=replay_from)
+            plan = settings.plan()
+            agent_runs = sum(1 for _, p, _ in plan if p != "greedy")
+            calls = f", about {agent_runs * CALLS_PER_RUN:,} LLM calls" if mode == "live" else ""
+            st.caption(f"{len(plan)} runs{calls}. Rules-only runs are deterministic, so each seed runs once.")
+        if st.button("Run evaluation", type="primary", disabled=not ready):
+            start(settings, roads)
+            st.rerun()
 
-    ready = mode is not None and last >= first and policies
-    settings = None
-    if ready:
-        settings = ev.EvalSettings(seeds=tuple(range(int(first), int(last) + 1)), policies=tuple(policies),
-                                   llm_mode=mode, repeats=int(repeats), replay_from=replay_from)
-        plan = settings.plan()
-        agent_runs = sum(1 for _, p, _ in plan if p != "greedy")
-        calls = f", about {agent_runs * CALLS_PER_RUN:,} LLM calls" if mode == "live" else ""
-        sb.caption(f"{len(plan)} runs{calls}. Rules-only runs are deterministic, so each seed runs once.")
-    if sb.button("Run evaluation", type="primary", width="stretch", disabled=not ready):
-        start(settings, roads)
 
-    done = ev.list_evaluations()
-    if done:
-        current = st.session_state.get("eval_id") if st.session_state.get("eval_id") in done else done[0]
-        st.session_state.eval_id = sb.selectbox("Past evaluations", done, index=done.index(current))
+def name_of(eval_id: str) -> str:
+    return eval_catalog.label(eval_id, load(eval_id)["settings"], eval_catalog.load_catalog())
 
 
 def start(settings: ev.EvalSettings, roads) -> None:
-    bar = st.sidebar.progress(0.0, text="Starting the evaluation ...")
+    bar = st.progress(0.0, text="Starting the evaluation ...")
     out = ev.run_evaluation(settings, lambda d, n, what: bar.progress(d / n, text=f"Run {d}/{n}: {what}"),
                             roads=roads, workers=4 if settings.llm_mode == "live" else 1)
     bar.empty()
-    st.session_state.eval_id = out.name
+    st.session_state.eval_pick_next = out.name   # applied before the picker is drawn on the next run
 
 
 def results(eval_id: str, playback_page) -> None:
     data = load(eval_id)
     summary, s = data["summary"], data["settings"]
-    mode = {"off": "rules only", "live": "live LLM", "replay": "replayed LLM"}[s["llm_mode"]]
-    st.markdown(f"### Evaluation `{eval_id}` · seeds {s['seeds'][0]}–{s['seeds'][-1]} · {mode}")
+    st.markdown(f"#### {name_of(eval_id)} · `{eval_id}`")
     sentence = claim(summary)
     if sentence:
         st.success(sentence)
@@ -174,8 +172,13 @@ def open_in_playback(data: dict, playback_page) -> None:
     repeat = c3.selectbox("Repeat", list(range(1, reps + 1)), key="eval_open_repeat")
     c4.markdown("&nbsp;")
     if c4.button("Open in playback", width="stretch"):
-        with st.spinner("Rebuilding the run ..."):
-            out = ev.rebuild_run(data["eval_id"], int(seed), policy, int(repeat))
+        try:
+            with st.spinner("Rebuilding the run ..."):
+                out = ev.rebuild_run(data["eval_id"], int(seed), policy, int(repeat))
+        except FileNotFoundError:
+            st.error("This evaluation's run folders are not on this machine (only its summary is committed). "
+                     "Run it again below; rules-only runs are deterministic.")
+            return
         live = st.session_state.get("live")
         if live is not None and not live.done:
             live.stop()
@@ -183,12 +186,59 @@ def open_in_playback(data: dict, playback_page) -> None:
         st.switch_page(playback_page)
 
 
-def render(roads, playback_page) -> None:
-    settings_sidebar(roads)
-    eval_id = st.session_state.get("eval_id")
-    if eval_id is None:
-        st.title("Evaluation")
-        st.info("Seeds 1 to 20 with the baseline, the agents and the three ablations (DESIGN 11.2, 11.3). "
-                "Press **Run evaluation** in the sidebar.")
+OVERVIEW = "overview"
+
+
+def overview() -> None:
+    """The final results on one screen: headline numbers, chart, contributions, how we got here."""
+    catalog = eval_catalog.load_catalog()
+    items = eval_catalog.headline(catalog, load)
+    if not items:
+        st.info("The final evaluations are not on this machine yet. Run one below, or turn on "
+                "**Show all evaluations**.")
         return
-    results(eval_id, playback_page)
+    cards = "".join(
+        f"<div class='kpi{' focus' if i.get('focus') else ''}'><div class='kpi-t'>{i['label']}</div>"
+        f"<div class='kpi-v'>{i['mean']}%</div><div class='kpi-d'>criticals on time · ± {i['sd']} across seeds"
+        + (f" · ± {i['repeat_sd']} across repeats" if i.get("repeat_sd") is not None else "") + "</div></div>"
+        for i in items)
+    st.markdown(f"<div class='headline'>{cards}</div>", unsafe_allow_html=True)
+    left, right = st.columns([1, 1], gap="large")
+    with left:
+        st.markdown("##### Criticals on time (seeds 1-20, 12 incidents)")
+        st.plotly_chart(eval_views.headline_bars(items, theme()), theme=None, width="stretch")
+    with right:
+        st.markdown("##### What each part contributes")
+        rows = eval_catalog.contributions(catalog, load)
+        st.dataframe(eval_views.contributions_table([r for r in rows if not r["side"]]), width="stretch")
+        st.caption("Against full rules-only agents:")
+        st.dataframe(eval_views.contributions_table([r for r in rows if r["side"]]), width="stretch")
+    st.markdown("##### How we got here")
+    steps = "".join(f"<div class='step'><b>{s['title']}</b> · <span class='num'>"
+                    f"{'–' if s['mean'] is None else str(s['mean']) + '%'}</span><br>{s['text']}</div>"
+                    for s in eval_catalog.timeline(catalog, load))
+    st.markdown(f"<div class='steps'>{steps}</div>", unsafe_allow_html=True)
+
+
+def picker() -> str:
+    catalog = eval_catalog.load_catalog()
+    if "eval_pick_next" in st.session_state:
+        st.session_state.update(eval_pick=st.session_state.pop("eval_pick_next"), eval_show_all=True)
+    head, pick, toggle = st.columns([2.2, 2.6, 1], vertical_alignment="bottom")
+    head.markdown("### 📊 Evaluation")
+    show_all = toggle.toggle("Show all evaluations", key="eval_show_all",
+                             help="Also list development, replayed and outdated evaluations")
+    options = [OVERVIEW, *eval_catalog.visible(ev.list_evaluations(), catalog, show_all)]
+    if st.session_state.get("eval_pick") not in options:
+        st.session_state.eval_pick = OVERVIEW
+    return pick.selectbox("Evaluation", options, key="eval_pick",
+                          format_func=lambda e: "Final results (overview)" if e == OVERVIEW else name_of(e))
+
+
+def render(roads, playback_page) -> None:
+    choice = picker()
+    if choice == OVERVIEW:
+        overview()
+    else:
+        results(choice, playback_page)
+    run_section(roads)
